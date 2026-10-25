@@ -1,0 +1,26 @@
+{
+  "name": "tron-usdt-dapp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Static TRON mainnet page that asks TronLink to sign one USDT transfer to a fixed recipient.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "test": "node --test",
+    "lint": "node scripts/check-syntax.mjs",
+    "typecheck": "tsc -p tsconfig.json --pretty false",
+    "build": "node scripts/build.mjs",
+    "qr": "node scripts/make-qr.mjs",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "qrcode": "1.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "5.9.3"
+  }
+}

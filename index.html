@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="description" content="Send USDT on TRON mainnet to one fixed recipient.">
+  <title>Tron USDT Claim</title>
+  <link rel="stylesheet" href="./src/styles.css">
+</head>
+<body class="claim">
+  <main class="claim-screen">
+    <div class="claim-sheet">
+      <h1 id="page-title">Tron USDT Claim</h1>
+      <p class="claim-note" id="wallet-presence">Looking for a wallet. Nothing is sent until you review and confirm.</p>
+      <button class="claim-connect" id="connect-button" type="button">Connect wallet</button>
+      <p id="status" role="status" tabindex="-1">Not connected. No transaction has been created.</p>
+      <p id="error" role="alert"></p>
+
+      <div id="connected-panel" class="claim-session" hidden>
+        <p class="label">Connected account</p>
+        <p class="address" id="account-address">Not connected</p>
+        <button class="ghost" id="copy-account" type="button" hidden>Copy account</button>
+        <p class="label">Network</p>
+        <p id="network-status">Not checked. Transfers stay off until TRON mainnet is verified.</p>
+        <button class="secondary" id="switch-network" type="button" hidden>Switch to TRON mainnet</button>
+        <button class="ghost" id="disconnect-button" type="button" hidden>Disconnect</button>
+      </div>
+
+      <form id="payment-form">
+        <label for="recipient">Address or Domain Name</label>
+        <div class="claim-field">
+          <input id="recipient" type="text" readonly autocomplete="off" spellcheck="false" aria-readonly="true" value="TG94XL9N1uVHPM4U4zcpYGc6w1i7nUBuiq">
+          <div class="claim-tools">
+            <button class="claim-tool" id="copy-recipient" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8 3h7a2 2 0 0 1 2 2v1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-1H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h2zm0 2H6v11h1V8a2 2 0 0 1 2-2h6V5H8zm3 3v11h9V8h-9z"/></svg>
+              <span>Paste</span>
+            </button>
+            <button class="claim-icon" id="contacts-button" type="button" aria-label="Contacts">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 12a3.5 3.5 0 1 0-3.5-3.5A3.5 3.5 0 0 0 12 12zm0 1.6c-3.1 0-7 1.5-7 4.4V20h14v-2c0-2.9-3.9-4.4-7-4.4z"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <label for="amount">Amount</label>
+        <div class="amount-row">
+          <input id="amount" name="amount" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Amount" aria-describedby="usd-line">
+          <div class="amount-side">
+            <span>USDT</span>
+            <button id="max-amount" type="button">Max</button>
+          </div>
+        </div>
+        <p class="usd-line" id="usd-line">= $<span id="usd-value">0</span></p>
+
+        <label for="memo">Memo</label>
+        <input id="memo" type="text" autocomplete="off" spellcheck="false">
+
+        <div class="next-bar">
+          <div class="next-bar-inner">
+            <button class="next" id="review-button" type="submit">Next</button>
+          </div>
+        </div>
+      </form>
+
+      <section class="review" id="review-panel" hidden aria-labelledby="review-heading">
+        <h2 id="review-heading" tabindex="-1">Review transfer</h2>
+        <dl>
+          <div><dt>Token</dt><dd>USDT (TRC-20)</dd></div>
+          <div><dt>Token contract</dt><dd class="address" id="review-token">TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t</dd></div>
+          <div><dt>Network</dt><dd id="review-network">TRON mainnet</dd></div>
+          <div><dt>Sender</dt><dd class="address" id="review-sender">Not connected</dd></div>
+          <div><dt>Recipient</dt><dd class="address" id="review-recipient">TG94XL9N1uVHPM4U4zcpYGc6w1i7nUBuiq</dd></div>
+          <div><dt>Amount</dt><dd id="review-amount"></dd></div>
+          <div><dt>Token units (6 decimals)</dt><dd id="review-units"></dd></div>
+          <div><dt>Wallet action</dt><dd>Sign and submit USDT <code>transfer(recipient, amount)</code> only. This page does not request token approval.</dd></div>
+          <div><dt>Network fee</dt><dd id="review-fee">TronLink shows the energy and bandwidth fee before you approve. This page caps the fee limit at 100 TRX and does not add its own fee.</dd></div>
+        </dl>
+        <p class="address" id="token-contract">TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t</p>
+        <button class="ghost" id="copy-token" type="button">Copy contract</button>
+        <p class="warning" id="review-warning"><strong>Blockchain transfers cannot be reversed.</strong> Reject the wallet prompt if any line differs. The memo is not part of this transfer.</p>
+        <button class="final" id="send-button" type="button">Send USDT</button>
+        <button class="ghost" id="back-button" type="button">Back</button>
+      </section>
+
+      <div id="receipt-details" hidden>
+        <h2>Receipt</h2>
+        <p id="receipt-status"></p>
+        <p class="label">Sender</p>
+        <p class="address" id="receipt-sender"></p>
+        <p id="txid" hidden></p>
+        <p><a id="explorer-link" hidden href="https://tronscan.org/" rel="noopener noreferrer" target="_blank">View on TRONSCAN</a></p>
+        <button class="ghost" id="copy-txid" type="button" hidden>Copy transaction ID</button>
+      </div>
+    </div>
+  </main>
+  <section id="receive" hidden>
+    <h2>Receive USDT</h2>
+    <div id="receive-qr" role="img" aria-label="QR code that opens this page only"></div>
+    <p id="receive-url"></p>
+  </section>
+  <noscript>JavaScript is required to connect a wallet. With JavaScript disabled, this page cannot create a transaction.</noscript>
+  <script type="module" src="./src/app.js?v=9"></script>
+</body>
+</html>

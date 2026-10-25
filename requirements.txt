@@ -1,0 +1,2 @@
+# QR images are generated with Node: npm run qr -- https://your-deployed-host/
+# make_qr.py is a wrapper and does not need a Python package.
