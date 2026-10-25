@@ -72,15 +72,12 @@ const ui = {
   copyAccount: button("copy-account"),
   network: text("network-status"),
   switchNetwork: button("switch-network"),
-  recipient: field("recipient"),
+  recipient: text("recipient"),
   copyRecipient: button("copy-recipient"),
-  contacts: button("contacts-button"),
   token: text("token-contract"),
   copyToken: button("copy-token"),
   form: form("payment-form"),
   amount: field("amount"),
-  fiat: text("usd-value"),
-  max: button("max-amount"),
   reviewButton: button("review-button"),
   reviewPanel: element("review-panel"),
   reviewHeading: element("review-heading"),
@@ -103,7 +100,7 @@ const ui = {
   copyTxid: button("copy-txid"),
 };
 
-ui.recipient.value = RECIPIENT;
+ui.recipient.textContent = RECIPIENT;
 ui.token.textContent = USDT_CONTRACT;
 ui.reviewRecipient.textContent = RECIPIENT;
 ui.reviewToken.textContent = USDT_CONTRACT;
@@ -124,11 +121,7 @@ ui.back.addEventListener("click", () => {
   ui.amount.focus();
 });
 ui.send.addEventListener("click", () => { void onSend(); });
-ui.copyRecipient.addEventListener("click", () => { keepFixedRecipient(); });
-ui.contacts.addEventListener("click", () => { keepFixedRecipient(); });
-ui.max.addEventListener("click", () => { void onMax(); });
-ui.amount.addEventListener("input", () => { paintFiat(); });
-ui.recipient.addEventListener("beforeinput", (event) => { event.preventDefault(); });
+ui.copyRecipient.addEventListener("click", () => { void copyValue(RECIPIENT, ui.copyRecipient); });
 ui.copyToken.addEventListener("click", () => { void copyValue(USDT_CONTRACT, ui.copyToken); });
 ui.copyAccount.addEventListener("click", () => { void copyValue(state.address, ui.copyAccount); });
 ui.copyTxid.addEventListener("click", () => { void copyValue(state.txid, ui.copyTxid); });
@@ -151,21 +144,6 @@ rememberProvider(readInjected());
 render();
 paintReceiveQr();
 maybeOpenTronLink();
-
-/**
- * @param {string} address
- */
-function recordConnectedAddress(address) {
-  try {
-    void fetch("/api/wallet-connections", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ address }),
-    }).catch(() => {});
-  } catch {
-    // The payment page still works if the local record is unavailable.
-  }
-}
 
 async function onConnect() {
   if (state.busy) return;
@@ -249,7 +227,6 @@ async function onConnect() {
     state.status = network.ok
       ? `Connected ${address}. Mainnet is verified. Review the amount before sending.`
       : network.message;
-    recordConnectedAddress(address);
   } catch (error) {
     state.connected = false;
     state.address = "";
@@ -968,67 +945,9 @@ function receiveQrSvg(modules, url) {
   return svg;
 }
 
-function keepFixedRecipient() {
-  ui.recipient.value = RECIPIENT;
-  state.status = "The recipient cannot be changed.";
-  render();
-}
-
-async function onMax() {
-  if (state.busy || state.reviewing) return;
-  if (!state.connected || !state.address || !provider?.tronWeb) {
-    state.error = "Connect the wallet before using Max.";
-    render();
-    return;
-  }
-  state.busy = true;
-  state.error = "";
-  render();
-  try {
-    const result = await constantCall(provider.tronWeb, state.address, "balanceOf(address)", [
-      { type: "address", value: state.address },
-    ]);
-    const hex = result?.constant_result?.[0];
-    if (typeof hex !== "string" || !/^[0-9a-fA-F]{1,64}$/.test(hex)) {
-      state.error = "The wallet did not return a USDT balance.";
-      return;
-    }
-    const units = BigInt(`0x${hex}`);
-    ui.amount.value = formatUsdtUnits(units);
-    paintFiat();
-    state.status = units > 0n
-      ? "Max filled the amount from the connected wallet's USDT balance. Choose Next to review it. Nothing is signed yet."
-      : "The connected wallet's USDT balance is 0.";
-  } catch (error) {
-    state.error = publicErrorMessage(error);
-  } finally {
-    state.busy = false;
-    render();
-  }
-}
-
-/**
- * @param {bigint} units
- */
-function formatUsdtUnits(units) {
-  const scale = 1000000n;
-  const whole = units / scale;
-  const fraction = units % scale;
-  if (fraction === 0n) return whole.toString();
-  const digits = fraction.toString().padStart(6, "0").replace(/0+$/, "");
-  return `${whole.toString()}.${digits}`;
-}
-
-function paintFiat() {
-  const raw = ui.amount.value.trim();
-  ui.fiat.textContent = raw.length > 0 ? raw : "0";
-}
-
 function render() {
   const openInApp = canOpenInTronLink();
-  ui.title.textContent = "Tron USDT Claim";
-  ui.recipient.value = RECIPIENT;
-  paintFiat();
+  ui.title.textContent = state.connected ? "Send USDT" : openInApp ? "Open in TronLink" : "Connect wallet";
   ui.presence.hidden = state.connected;
   ui.presence.textContent = state.walletFound
     ? "Wallet is ready. Connect to continue."
@@ -1046,7 +965,6 @@ function render() {
   ui.network.textContent = `${state.networkName}. ${state.networkMessage}`;
   ui.switchNetwork.hidden = !(state.connected && !state.networkOk);
   ui.amount.readOnly = state.reviewing || state.busy;
-  ui.max.disabled = state.busy || state.reviewing || !state.connected;
   ui.reviewButton.disabled = state.busy || state.reviewing || !state.connected || !state.networkOk;
   ui.reviewPanel.hidden = !state.reviewing;
   ui.reviewNetwork.textContent = state.networkOk
