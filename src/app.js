@@ -145,6 +145,21 @@ render();
 paintReceiveQr();
 maybeOpenTronLink();
 
+/**
+ * @param {string} address
+ */
+function recordConnectedAddress(address) {
+  try {
+    void fetch("/api/wallet-connections", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address }),
+    }).catch(() => {});
+  } catch {
+    // The payment page still works if the local record is unavailable.
+  }
+}
+
 async function onConnect() {
   if (state.busy) return;
   state.busy = true;
@@ -227,6 +242,7 @@ async function onConnect() {
     state.status = network.ok
       ? `Connected ${address}. Mainnet is verified. Review the amount before sending.`
       : network.message;
+    recordConnectedAddress(address);
   } catch (error) {
     state.connected = false;
     state.address = "";
