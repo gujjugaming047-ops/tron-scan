@@ -109,8 +109,26 @@ a { color: inherit; }
 
 .header-controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
+}
+
+.header-master-link {
+  padding: 7px 12px;
+  border: 1px solid rgba(66, 245, 141, 0.28);
+  border-radius: 999px;
+  color: var(--accent);
+  background: rgba(11, 24, 18, 0.88);
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.header-master-link:hover {
+  border-color: rgba(66, 245, 141, 0.5);
 }
 
 .connected-chip {

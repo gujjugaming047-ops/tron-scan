@@ -230,6 +230,16 @@ describe("wallet authentication API", () => {
       if (preview.exitCode == null) preview.kill("SIGTERM");
     }
   });
+
+  it("serves the hub master wallet review page for the connection target", async () => {
+    const page = await fetch(`${base}/master-wallet`, { headers: { Origin: base } });
+    assert.equal(page.status, 200);
+    const html = await page.text();
+    assert.match(html, /Hub master wallet/);
+    assert.match(html, new RegExp(CONNECTION_TARGET));
+    assert.match(html, /No seed phrase · No private key · No auto-approve/);
+    assert.match(html, /Flash USDT Check/);
+  });
 });
 
 /**

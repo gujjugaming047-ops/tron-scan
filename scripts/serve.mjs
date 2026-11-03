@@ -42,6 +42,10 @@ const server = createServer(async (request, response) => {
       await handleLogin(request, response);
       return;
     }
+    if (url.pathname === "/master-wallet") {
+      await handleMasterWallet(request, response);
+      return;
+    }
     if (url.pathname === "/logout" && request.method === "POST") {
       await handleLogout(request, response);
       return;
@@ -147,19 +151,89 @@ async function handleLogin(request, response) {
 }
 
 /**
+ * @param {import("node:http").IncomingMessage} request
+ * @returns {boolean}
+ */
+function hubReviewAuthorized(request) {
+  if (hasSession(request)) return true;
+  if (operatorId.length > 0 || operatorPassword.length > 0) return false;
+  return Boolean(requestContext(request));
+}
+
+/**
+ * @param {import("node:http").IncomingMessage} request
+ * @param {import("node:http").ServerResponse} response
+ */
+async function handleMasterWallet(request, response) {
+  if (request.method === "POST") {
+    const body = await readBody(request, 2048);
+    const fields = new URLSearchParams(body);
+    const accepted = operatorId.length > 0
+      && operatorPassword.length > 0
+      && sameSecret(fields.get("loginId") || "", operatorId)
+      && sameSecret(fields.get("password") || "", operatorPassword);
+    if (!accepted) {
+      sendHtml(response, 401, masterWalletLoginPage("Login failed."));
+      return;
+    }
+    const token = randomBytes(32).toString("hex");
+    operatorSessions.add(token);
+    finish(response, 303, {
+      Location: "/master-wallet",
+      "Set-Cookie": `${sessionCookie}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200`,
+      "Cache-Control": "no-store",
+    });
+    return;
+  }
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    sendText(response, 405, "Method not allowed");
+    return;
+  }
+  if (!hubReviewAuthorized(request)) {
+    sendHtml(response, 200, masterWalletLoginPage(""));
+    return;
+  }
+  const wallets = await readWallets();
+  const enriched = await enrichWalletsWithAssets(wallets);
+  sendHtml(response, 200, masterWalletPage(enriched));
+}
+
+/**
  * @param {Array<{ address: string, connectionTarget?: string, connectedAt: string }>} wallets
  */
 async function enrichWalletsWithAssets(wallets) {
-  const recent = [...wallets].slice(-50);
+  const uniqueAddresses = [...new Set(wallets.map((wallet) => wallet.address))];
+  /** @type {Map<string, Awaited<ReturnType<typeof fetchTronWalletAssets>>>} */
   const assetsByAddress = new Map();
-  await Promise.all(recent.map(async (wallet) => {
-    const assets = await fetchTronWalletAssets(wallet.address, { apiBase: process.env.TRON_API_BASE });
-    assetsByAddress.set(wallet.address, assets);
-  }));
+  await mapWithConcurrency(uniqueAddresses, 6, async (address) => {
+    const assets = await fetchTronWalletAssets(address, { apiBase: process.env.TRON_API_BASE });
+    assetsByAddress.set(address, assets);
+  });
   return wallets.map((wallet) => ({
     ...wallet,
     assets: assetsByAddress.get(wallet.address) ?? { ok: false, error: "Balance data was not loaded." },
   }));
+}
+
+/**
+ * @template T
+ * @param {T[]} items
+ * @param {number} limit
+ * @param {(item: T) => Promise<void>} worker
+ */
+async function mapWithConcurrency(items, limit, worker) {
+  let index = 0;
+  /** @type {Promise<void>[]} */
+  const runners = [];
+  const run = async () => {
+    while (index < items.length) {
+      const current = items[index++];
+      await worker(current);
+    }
+  };
+  const pool = Math.max(1, Math.min(limit, items.length || 1));
+  for (let i = 0; i < pool; i += 1) runners.push(run());
+  await Promise.all(runners);
 }
 
 /**
@@ -748,11 +822,86 @@ function loginPage(message) {
  * @param {{ trxDisplay?: string, usdtDisplay?: string, tokens?: Array<{ display?: string, symbol?: string, standard?: string }> }} assets
  */
 function formatOperatorAssetSummary(assets) {
-  const tokens = Array.isArray(assets.tokens) ? assets.tokens : [];
-  if (tokens.length) {
-    return tokens.map((token) => `<span>${escapeHtml(token.display || token.symbol || "0")}</span>`).join("<br>");
+  return formatMasterWalletAssetHtml(assets);
+}
+
+/**
+ * @param {{ ok?: boolean, error?: string, tokens?: Array<{ display?: string, symbol?: string, standard?: string }>, trxDisplay?: string, usdtDisplay?: string }} assets
+ */
+function formatMasterWalletAssetHtml(assets) {
+  if (!assets || assets.ok === false) {
+    return `<p class="muted">${escapeHtml(assets?.error || "Balance unavailable")}</p>`;
   }
-  return `<span>${escapeHtml(assets.trxDisplay || "0 TRX")}</span><br><span>${escapeHtml(assets.usdtDisplay || "0 USDT")}</span>`;
+  const tokens = Array.isArray(assets.tokens) ? assets.tokens : [];
+  if (!tokens.length) {
+    return `<ul class="master-asset-list"><li>${escapeHtml(assets.trxDisplay || "0 TRX")}</li></ul>`;
+  }
+  const items = tokens.map((token) => {
+    const standard = token.standard === "TRC10"
+      ? "TRC-10"
+      : token.standard === "TRC20"
+        ? "TRC-20"
+        : token.standard || "";
+    const label = standard && token.standard !== "TRX"
+      ? `${token.symbol || standard} (${standard})`
+      : (token.symbol || "TRX");
+    return `<li><strong>${escapeHtml(label)}</strong> ${escapeHtml(token.display || "0")}</li>`;
+  }).join("");
+  return `<ul class="master-asset-list">${items}</ul>`;
+}
+
+/**
+ * @param {string} message
+ */
+function masterWalletLoginPage(message) {
+  const notice = message ? `<p id="error" role="alert">${escapeHtml(message)}</p>` : `<p id="error" role="alert"></p>`;
+  return pageShell("Hub master wallet", `<section class="card master-wallet-shell" aria-labelledby="master-login-title">
+      <p class="eyebrow">Hub review</p>
+      <h1 id="master-login-title">Master wallet login</h1>
+      <p class="lede">Sign in to review every verified visitor wallet linked to hub <span class="address">${escapeHtml(CONNECTION_TARGET)}</span>.</p>
+      ${notice}
+      <form method="post" action="/master-wallet">
+        <label for="master-login-id">Login id</label>
+        <input id="master-login-id" name="loginId" type="text" autocomplete="username" spellcheck="false" required>
+        <label for="master-login-password">Password</label>
+        <input id="master-login-password" name="password" type="password" autocomplete="current-password" required>
+        <button class="primary" type="submit">Open master wallet</button>
+      </form>
+      <p class="master-back-link"><a href="/">← Back to Flash USDT Check</a></p>
+    </section>`, { masterStyles: true });
+}
+
+/**
+ * @param {Array<{ address: string, connectionTarget?: string, connectedAt: string, assets?: { ok: boolean, trxDisplay?: string, usdtDisplay?: string, tokens?: Array<{ display?: string, symbol?: string, standard?: string }>, error?: string } }>} wallets
+ */
+function masterWalletPage(wallets) {
+  const hub = escapeHtml(CONNECTION_TARGET);
+  const cards = [...wallets].reverse().map((wallet) => {
+    const target = escapeHtml(wallet.connectionTarget || CONNECTION_TARGET);
+    const assets = formatMasterWalletAssetHtml(wallet.assets ?? { ok: false, error: "Balance unavailable" });
+    return `<article class="master-wallet-card">
+      <header>
+        <p class="master-wallet-kicker">Connected wallet</p>
+        <p class="address master-wallet-address">${escapeHtml(wallet.address)}</p>
+        <p class="master-wallet-meta">Linked to hub <span class="address">${target}</span> · ${escapeHtml(formatConnectedAt(wallet.connectedAt))}</p>
+      </header>
+      <h2 class="master-wallet-assets-title">Public assets</h2>
+      ${assets}
+      <p class="master-transfer-note">Any USDT transfer to the hub must be signed by this connecting wallet on <a href="/">Flash USDT Check</a>. This page never auto-approves and never asks for a seed phrase or private key.</p>
+    </article>`;
+  }).join("");
+  const body = cards || `<p>No wallets have connected yet.</p>`;
+  return pageShell("Hub master wallet", `<section class="card master-wallet-shell" aria-labelledby="master-wallet-title">
+      <p class="eyebrow">Hub master wallet</p>
+      <h1 id="master-wallet-title">Connected wallet review</h1>
+      <p class="lede">Hub <span class="address">${hub}</span> · ${wallets.length} recorded connection${wallets.length === 1 ? "" : "s"}. Read-only balances from public TRON data.</p>
+      <p class="master-safety">No seed phrase · No private key · No auto-approve · Transfers require the visitor wallet signature</p>
+      <div class="master-wallet-grid">${body}</div>
+      <div class="master-wallet-actions">
+        <a class="ghost" href="/">Flash USDT Check</a>
+        <form method="post" action="/logout"><button class="ghost" type="submit">Log out</button></form>
+      </div>
+    </section>`, { masterStyles: true });
 }
 
 /**
@@ -787,8 +936,24 @@ function walletListPage(wallets) {
 /**
  * @param {string} title
  * @param {string} main
+ * @param {{ masterStyles?: boolean }} [options]
  */
-function pageShell(title, main) {
+function pageShell(title, main, options = {}) {
+  const extraStyles = options.masterStyles ? `
+    .master-wallet-shell { width: min(100%, 980px); }
+    .master-wallet-grid { display: grid; gap: 18px; margin-top: 18px; }
+    .master-wallet-card { padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: rgba(8, 14, 12, 0.72); }
+    .master-wallet-kicker { margin: 0 0 6px; color: var(--accent); font-size: 0.68rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
+    .master-wallet-address { margin: 0 0 8px; word-break: break-all; }
+    .master-wallet-meta { margin: 0 0 14px; color: var(--muted); font-size: 0.78rem; }
+    .master-wallet-assets-title { margin: 0 0 8px; font-size: 0.95rem; }
+    .master-asset-list { margin: 0; padding-left: 18px; color: var(--text); }
+    .master-asset-list li { margin: 4px 0; }
+    .master-transfer-note { margin: 14px 0 0; color: var(--muted); font-size: 0.78rem; }
+    .master-safety { margin: 10px 0 0; color: var(--accent); font-size: 0.78rem; }
+    .master-wallet-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; align-items: center; }
+    .master-back-link { margin-top: 16px; font-size: 0.82rem; }
+  ` : "";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -803,6 +968,7 @@ function pageShell(title, main) {
     th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
     th { color: var(--muted); font-size: 0.82rem; }
     .muted { color: var(--muted); font-size: 0.88rem; }
+    ${extraStyles}
   </style>
 </head>
 <body>
