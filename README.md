@@ -1,4 +1,14 @@
-# TRON USDT payment page
+# Flash USDT Checker landing page
+
+The current home page is Page 1 of a Flash USDT checker experience. It provides a polished, responsive landing screen with a prominent **Start Flash USDT Check** option, explains the verification steps, and links directly to the official TRC-20 USDT contract on TRONSCAN.
+
+The wording deliberately avoids treating “Flash USDT” as an official token type. The page explains that a real check must verify a successful public transaction and match Tether’s official TRC-20 contract. It never asks for a wallet connection, signature, seed phrase, or private key.
+
+Run `npm start` and open `http://127.0.0.1:4173` to preview it. Run `npm run check` for syntax, type, unit, safety, and build checks.
+
+## Legacy payment implementation
+
+The repository also retains the earlier wallet payment implementation in `src/app.js` and `src/logic.mjs` for reference and its existing automated tests. The new landing page does not load or execute that JavaScript.
 
 This is a one-page website that prepares one USDT (TRC-20) transfer on TRON mainnet and asks TronLink to sign it. The page has the transfer desk, a short explanation of the steps, and a safety section. The recipient is fixed. Opening the page, or scanning a QR code that points at the page, does not connect a wallet and does not send funds.
 

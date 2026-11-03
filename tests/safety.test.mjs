@@ -34,12 +34,13 @@ describe("source safety", () => {
     assert.equal(app.match(/sendRawTransaction/g)?.length, 1);
     assert.equal(app.match(/\.sign\(/g)?.length, 1);
     assert.match(app, /receivePageUrl\(window\.location\.href\)/);
-    assert.match(html, /Receive USDT/);
-    assert.match(html, /id="receive-qr"/);
-    assert.match(html, /id="receipt-sender"/);
+    assert.match(html, /Flash USDT Check/);
+    assert.match(html, /“Flash USDT” is not an official Tether token type/);
+    assert.match(html, /Never enter a seed phrase or private key/);
+    assert.match(html, /https:\/\/tronscan\.org\/#\/token20\//);
     assert.equal(html.includes("tron:"), false);
-    assert.equal(html.includes(RECIPIENT), true);
+    assert.equal(html.includes(RECIPIENT), false);
     assert.equal(html.includes(USDT_CONTRACT), true);
-    assert.equal(/<script(?![^>]+src="\.\/src\/app\.js(?:\?[^"]*)?")[^>]*>/i.test(html), false);
+    assert.equal(/<script/i.test(html), false);
   });
 });

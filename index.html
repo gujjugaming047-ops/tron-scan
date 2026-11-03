@@ -4,79 +4,83 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
-  <meta name="description" content="Connect TronLink on TRON mainnet to send USDT to one fixed recipient.">
-  <title>Connect wallet</title>
+  <meta name="description" content="Choose the Flash USDT Check option and learn what will be verified on TRON.">
+  <title>Flash USDT Checker</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%230b1712'/%3E%3Cpath d='M13.8 2 5 13.2h6.2L10.2 22 19 10.8h-6.2L13.8 2Z' fill='%2342f58d'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="./src/styles.css">
 </head>
 <body>
-  <main class="screen">
-    <section class="card" id="send" aria-labelledby="page-title">
-      <p class="eyebrow">TRON mainnet · USDT</p>
-      <h1 id="page-title">Connect wallet</h1>
-      <p class="lede" id="wallet-presence">Looking for TronLink. Nothing connects until you choose Connect wallet.</p>
-      <button class="primary" id="connect-button" type="button">Connect wallet</button>
-      <p id="status" role="status" tabindex="-1">Not connected. No transaction has been created.</p>
-      <p id="error" role="alert"></p>
+  <div class="site-shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="FlashCheck home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M13.8 2 5 13.2h6.2L10.2 22 19 10.8h-6.2L13.8 2Z"/></svg>
+        </span>
+        <span>Flash<span>Check</span></span>
+      </a>
+      <div class="network-pill"><span aria-hidden="true"></span> TRON network</div>
+    </header>
 
-      <div id="connected-panel" hidden>
-        <p class="label">Connected account</p>
-        <p class="address" id="account-address">Not connected</p>
-        <button class="ghost" id="copy-account" type="button" hidden>Copy account</button>
-        <p class="label">Network</p>
-        <p id="network-status">Not checked. Transfers stay off until TRON mainnet is verified.</p>
-        <button class="secondary" id="switch-network" type="button" hidden>Switch to TRON mainnet</button>
-        <button class="ghost" id="disconnect-button" type="button" hidden>Disconnect</button>
+    <main>
+      <section class="hero" aria-labelledby="page-title">
+        <div class="hero-copy">
+          <p class="eyebrow"><span></span> Secure token verification</p>
+          <h1 id="page-title">Check before<br><em>you trust.</em></h1>
+          <p class="lede">Review a claimed Flash USDT transaction against public TRON network data before you take action.</p>
 
-        <form id="payment-form">
-          <p class="label">Recipient</p>
-          <p class="address" id="recipient">TG94XL9N1uVHPM4U4zcpYGc6w1i7nUBuiq</p>
-          <button class="ghost" id="copy-recipient" type="button">Copy recipient</button>
-          <p class="label">USDT contract</p>
-          <p class="address" id="token-contract">TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t</p>
-          <button class="ghost" id="copy-token" type="button">Copy contract</button>
-          <label for="amount">Amount (USDT)</label>
-          <input id="amount" name="amount" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="0.00" aria-describedby="amount-hint">
-          <p class="hint" id="amount-hint">Up to 6 decimal places. The recipient cannot be changed.</p>
-          <button class="primary" id="review-button" type="submit">Review transfer</button>
-        </form>
-      </div>
+          <div class="trust-row" aria-label="Checker features">
+            <div><span class="trust-icon">✓</span><p><strong>Read-only</strong>No wallet signature</p></div>
+            <div><span class="trust-icon">✓</span><p><strong>Transparent</strong>Public chain data</p></div>
+            <div><span class="trust-icon">✓</span><p><strong>Fast</strong>Clear results</p></div>
+          </div>
+        </div>
 
-      <section class="review" id="review-panel" hidden aria-labelledby="review-heading">
-        <h2 id="review-heading" tabindex="-1">Review transfer</h2>
-        <dl>
-          <div><dt>Token</dt><dd>USDT (TRC-20)</dd></div>
-          <div><dt>Token contract</dt><dd class="address" id="review-token">TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t</dd></div>
-          <div><dt>Network</dt><dd id="review-network">TRON mainnet</dd></div>
-          <div><dt>Sender</dt><dd class="address" id="review-sender">Not connected</dd></div>
-          <div><dt>Recipient</dt><dd class="address" id="review-recipient">TG94XL9N1uVHPM4U4zcpYGc6w1i7nUBuiq</dd></div>
-          <div><dt>Amount</dt><dd id="review-amount"></dd></div>
-          <div><dt>Token units (6 decimals)</dt><dd id="review-units"></dd></div>
-          <div><dt>Wallet action</dt><dd>Sign and submit USDT <code>transfer(recipient, amount)</code> only. This page does not request token approval.</dd></div>
-          <div><dt>Network fee</dt><dd id="review-fee">TronLink shows the energy and bandwidth fee before you approve. This page caps the fee limit at 100 TRX and does not add its own fee.</dd></div>
-        </dl>
-        <p class="warning" id="review-warning"><strong>Blockchain transfers cannot be reversed.</strong> Reject the wallet prompt if any line differs.</p>
-        <button class="final" id="send-button" type="button">Send USDT</button>
-        <button class="ghost" id="back-button" type="button">Back</button>
+        <article class="option-card" aria-labelledby="option-title">
+          <div class="card-topline">
+            <span>Checker option</span>
+            <span>Page 01</span>
+          </div>
+          <div class="option-icon" aria-hidden="true">
+            <svg viewBox="0 0 64 64">
+              <path d="M32 8 51 15v14c0 13-7.8 23.3-19 27-11.2-3.7-19-14-19-27V15l19-7Z"/>
+              <path d="m23 32 6 6 12-13"/>
+            </svg>
+          </div>
+          <p class="option-label">Verification tool</p>
+          <h2 id="option-title">Flash USDT Check</h2>
+          <p>Inspect the transaction record, token contract, status, and amount on the TRON network.</p>
+          <a class="primary-action" href="#checker-details">
+            Start Flash USDT Check
+            <span aria-hidden="true">→</span>
+          </a>
+          <p class="privacy-note"><span aria-hidden="true">◇</span> Never enter a seed phrase or private key.</p>
+        </article>
       </section>
 
-      <div id="receipt-details" hidden>
-        <h2>Receipt</h2>
-        <p id="receipt-status"></p>
-        <p class="label">Sender</p>
-        <p class="address" id="receipt-sender"></p>
-        <p id="txid" hidden></p>
-        <p><a id="explorer-link" hidden href="https://tronscan.org/" rel="noopener noreferrer" target="_blank">View on TRONSCAN</a></p>
-        <button class="ghost" id="copy-txid" type="button" hidden>Copy transaction ID</button>
-      </div>
-    </section>
+      <section class="details" id="checker-details" aria-labelledby="details-title">
+        <div class="details-heading">
+          <p class="eyebrow"><span></span> What gets checked</p>
+          <h2 id="details-title">Know what is real.</h2>
+          <p>“Flash USDT” is not an official Tether token type. A reliable check must match the transaction to the official TRC-20 USDT contract and confirm its on-chain status.</p>
+        </div>
+        <ol class="check-list">
+          <li><span>01</span><div><strong>Transaction record</strong><p>Confirm that the transaction exists and succeeded on TRON.</p></div></li>
+          <li><span>02</span><div><strong>Official contract</strong><p>Match the token against Tether’s TRC-20 USDT contract.</p></div></li>
+          <li><span>03</span><div><strong>Transfer details</strong><p>Review the sender, recipient, amount, and timestamp.</p></div></li>
+        </ol>
+        <a class="contract-link" href="https://tronscan.org/#/token20/TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" target="_blank" rel="noopener noreferrer">
+          View official USDT on TRONSCAN <span aria-hidden="true">↗</span>
+        </a>
+      </section>
+    </main>
 
-    <section id="receive" hidden>
-      <h2>Receive USDT</h2>
-      <div id="receive-qr" role="img" aria-label="QR code that opens this page only"></div>
-      <p id="receive-url"></p>
-    </section>
-  </main>
-  <noscript>JavaScript is required to connect a wallet. With JavaScript disabled, this page cannot create a transaction.</noscript>
-  <script type="module" src="./src/app.js?v=8"></script>
+    <footer>
+      <p>FlashCheck <span>•</span> Verification guidance only</p>
+      <p>Never send funds based on a screenshot or promise of a temporary balance.</p>
+    </footer>
+  </div>
+  <noscript>
+    <p class="noscript">This page works without JavaScript. Use the official TRONSCAN link to inspect public network data.</p>
+  </noscript>
 </body>
 </html>

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
@@ -67,12 +67,14 @@ describe("QR generator", () => {
       });
       assert.notEqual(bad.status, 0);
       assert.match(bad.stderr, /example/i);
-      const python = spawnSync("python", ["make_qr.py", "http://127.0.0.1"], {
-        cwd: root,
+      const pythonDirectory = path.join(directory, "python");
+      mkdirSync(pythonDirectory);
+      const python = spawnSync("python", [path.join(root, "make_qr.py"), "http://127.0.0.1"], {
+        cwd: pythonDirectory,
         encoding: "utf8",
       });
       assert.notEqual(python.status, 0);
-      assert.equal(existsSync(path.join(root, "dapp_qr.png")), false);
+      assert.equal(existsSync(path.join(pythonDirectory, "dapp_qr.png")), false);
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
