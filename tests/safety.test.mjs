@@ -45,6 +45,7 @@ describe("source safety", () => {
     assert.match(landing, /\/api\/auth\/session/);
     assert.match(landing, /\/api\/public\/wallet-assets\?address=/);
     assert.match(landing, /\/api\/public\/evm-wallet-assets\?/);
+    assert.match(landing, /loadVerifiedWalletAssets\(session, \{ scrollIntoView: true \}\)/);
     assert.match(html, /id="test-tron-address"/);
     assert.match(html, /id="tron-balance-check-form"/);
     assert.match(html, /id="dialog-wallet-assets"/);

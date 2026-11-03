@@ -128,7 +128,6 @@ window.addEventListener("tronLink#initialized", () => {
 });
 
 ui.open.addEventListener("click", () => {
-  ui.dialog.showModal();
   void openConnectionFlow();
 });
 ui.close.addEventListener("click", () => ui.dialog.close());
@@ -241,13 +240,21 @@ async function initializeSessions() {
 
 async function openConnectionFlow() {
   if (connected && session) {
-    ui.dialog.showModal();
-    await loadVerifiedWalletAssets(session, { scrollIntoView: false });
-    if (ui.dialog.open) ui.dialog.close();
+    await loadVerifiedWalletAssets(session, { scrollIntoView: true });
     return;
   }
+  openWalletChooserDialog();
   if (deferredState) showState(deferredState);
   else showOptions();
+}
+
+function openWalletChooserDialog() {
+  if (ui.dialog.open) return;
+  try {
+    ui.dialog.showModal();
+  } catch {
+    // Dialog is already open; leave the wallet chooser visible.
+  }
 }
 
 /**
