@@ -406,6 +406,41 @@ h1 em {
   margin: 18px 0 0;
 }
 
+.asset-list-heading {
+  margin: 18px 0 0;
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+}
+
+.asset-error {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 120, 120, 0.45);
+  border-radius: 12px;
+  background: rgba(120, 24, 24, 0.35);
+  color: #ffb4b4;
+  font-size: 0.88rem;
+}
+
+.dialog-assets {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(8, 14, 12, 0.92);
+}
+
+.dialog-assets-address {
+  margin: 8px 0 0;
+  font-size: 0.82rem;
+  word-break: break-all;
+}
+
+.wallet-dialog .dialog-assets {
+  max-height: min(42vh, 360px);
+  overflow: auto;
+}
+
 .asset-list div {
   display: flex;
   justify-content: space-between;

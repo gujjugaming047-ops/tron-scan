@@ -68,7 +68,14 @@ const ui = {
   linkTargetAddress: requiredElement("link-target-address"),
   linkedVisitorAddress: requiredElement("linked-visitor-address"),
   linkedTokenList: requiredElement("linked-token-list"),
+  linkedAssetsHeading: requiredElement("linked-assets-heading"),
+  linkedAssetError: requiredElement("linked-asset-error"),
   linkedAssetNote: requiredElement("linked-asset-note"),
+  dialogWalletAssets: requiredElement("dialog-wallet-assets"),
+  dialogVisitorAddress: requiredElement("dialog-visitor-address"),
+  dialogTokenList: requiredElement("dialog-token-list"),
+  dialogAssetError: requiredElement("dialog-asset-error"),
+  dialogAssetNote: requiredElement("dialog-asset-note"),
 };
 
 /** @type {WalletDescriptor[]} */
@@ -98,6 +105,7 @@ let pairingCanCancel = true;
  * ownerPairingQr: (uri: string) => Promise<string>
  * }} */
 let walletConnectClient = null;
+let assetFetchGeneration = 0;
 /** @type {{ kind: "pending" | "success" | "error", title: string, message: string, address?: string, help?: { href: string, label: string } | null } | null} */
 let deferredState = null;
 
@@ -268,7 +276,7 @@ async function connectWalletConnect() {
     });
     assertVisitorPairingActive(attempt);
     showVisitorWalletAddress(pairing.address);
-    void presentConnectedWallet(pairing.address, { useSessionAssets: false });
+    void presentConnectedWallet(pairing.address, { useSessionAssets: false, scrollIntoView: false });
     setOwnerPairingStatus("Visitor wallet paired. Sign the login message to verify this public address.", "pending");
     const nonce = await fetchJson("/api/auth/nonce");
     assertVisitorPairingActive(attempt);
@@ -436,7 +444,7 @@ async function restoreSession() {
         return;
       }
       activeWallet = null;
-      showConnected(restored);
+      showConnected(restored, { scrollIntoView: false });
     } catch {
       clearConnectedUi();
       rememberState({
@@ -481,7 +489,7 @@ async function restoreSession() {
   }
   activeWallet = wallet;
   bindWalletEvents(wallet);
-  showConnected(restored);
+  showConnected(restored, { scrollIntoView: false });
 }
 
 /**
@@ -516,6 +524,10 @@ async function connectSelected(walletId) {
       throw new Error(network === "tron" || wallet.network === "tron"
         ? "Switch the wallet to TRON mainnet and try again."
         : "The wallet network could not be read.");
+    }
+
+    if (network === "tron") {
+      void presentConnectedWallet(address, { useSessionAssets: false, scrollIntoView: false });
     }
 
     const existing = await fetchJson("/api/auth/session");
@@ -576,6 +588,9 @@ async function authenticate(wallet, address, chainId, network = wallet.network) 
     title: "Verify this sign-in",
     message: "Sign the login message in your wallet. This is not a transaction and cannot move funds.",
   });
+  if (network === "tron") {
+    void presentConnectedWallet(address, { useSessionAssets: false, scrollIntoView: false });
+  }
   const signature = await signLoginMessage(wallet, address, message, network);
   const verified = await fetchJson("/api/auth/verify", {
     method: "POST",
@@ -686,8 +701,9 @@ async function disconnectSession(message) {
 
 /**
  * @param {{ address: string, network: "evm" | "tron", chainId: string, walletId: string, expiresAt: string, connectionTarget?: string }} authenticated
+ * @param {{ scrollIntoView?: boolean }} [options]
  */
-function showConnected(authenticated) {
+function showConnected(authenticated, options = {}) {
   session = authenticated;
   connected = true;
   deferredState = null;
@@ -699,16 +715,19 @@ function showConnected(authenticated) {
   arrow.textContent = "→";
   ui.open.append(arrow);
   if (authenticated.network === "tron") {
-    void presentConnectedWallet(authenticated.address, { useSessionAssets: true });
+    void presentConnectedWallet(authenticated.address, {
+      useSessionAssets: true,
+      scrollIntoView: options.scrollIntoView !== false,
+    });
   } else {
-    ui.linkedWalletView.hidden = true;
+    hideWalletAssetPanels();
   }
   if (ui.dialog.open) {
     showState({
       kind: "success",
       title: "Wallet verified",
       message: authenticated.network === "tron"
-        ? `TRON wallet ${shortenWalletAddress(authenticated.address)} connected. Public balances below are for this wallet until ${new Date(authenticated.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. No transaction was requested.`
+        ? `TRON wallet ${shortenWalletAddress(authenticated.address)} connected. Total assets are listed in this dialog and on the page below until ${new Date(authenticated.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. No transaction was requested.`
         : `EVM session connected until ${new Date(authenticated.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. No transaction was requested.`,
       address: authenticated.address,
     });
@@ -717,44 +736,112 @@ function showConnected(authenticated) {
 
 /**
  * @param {string} address
- * @param {{ useSessionAssets?: boolean }} [options]
+ * @param {{ useSessionAssets?: boolean, scrollIntoView?: boolean }} [options]
  */
 async function presentConnectedWallet(address, options = {}) {
-  ui.linkTargetAddress.textContent = CONNECTION_TARGET;
+  const generation = ++assetFetchGeneration;
   if (!address) {
-    ui.linkedWalletView.hidden = true;
+    hideWalletAssetPanels();
     return;
   }
-  ui.linkedWalletView.hidden = false;
-  ui.linkedVisitorAddress.textContent = address;
-  renderLinkedTokenList([{ standard: "TRX", symbol: "TRX", name: "TRON", display: "…" }]);
-  ui.linkedAssetNote.textContent = "Loading public TRON balances for your connecting wallet…";
+  beginWalletAssetLoad(address);
+  if (options.scrollIntoView !== false) {
+    ui.linkedWalletView.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
   const assetsPath = options.useSessionAssets
     ? "/api/wallet-assets"
     : `/api/public/wallet-assets?address=${encodeURIComponent(address)}`;
   const assets = await fetchJson(assetsPath);
+  if (generation !== assetFetchGeneration) return;
   if (!assets.ok || !assets.body?.assets) {
-    renderLinkedTokenList([]);
-    ui.linkedAssetNote.textContent = assets.body?.error || "Public balance data could not be loaded.";
+    showWalletAssetError(describeAssetFetchFailure(assets));
     return;
   }
   const resolvedAddress = assets.body.address || address;
   ui.linkedVisitorAddress.textContent = resolvedAddress;
+  ui.dialogVisitorAddress.textContent = resolvedAddress;
   const tokens = Array.isArray(assets.body.assets.tokens) ? assets.body.assets.tokens : [];
-  renderLinkedTokenList(tokens.length ? tokens : [{
+  const displayTokens = tokens.length ? tokens : [{
     standard: "TRX",
     symbol: "TRX",
     name: "TRON",
     display: assets.body.assets.trxDisplay || "0 TRX",
-  }]);
-  ui.linkedAssetNote.textContent = `Read-only totals for ${shortenWalletAddress(resolvedAddress)} from public TRON network data. Hub link ${shortenWalletAddress(CONNECTION_TARGET)} is recorded separately.`;
+  }];
+  renderWalletAssetLists(displayTokens);
+  clearWalletAssetError();
+  const note = `Read-only totals for ${shortenWalletAddress(resolvedAddress)} from public TRON network data. Hub link ${shortenWalletAddress(CONNECTION_TARGET)} is recorded separately.`;
+  ui.linkedAssetNote.textContent = note;
+  ui.dialogAssetNote.textContent = note;
+}
+
+/**
+ * @param {{ ok: boolean, status: number, body: { error?: string } | null }} result
+ */
+function describeAssetFetchFailure(result) {
+  if (result.body?.error) return result.body.error;
+  if (result.status === 502) return "Public TRON balance data is unavailable right now. Try again in a moment.";
+  if (result.status === 403) return "This page could not authorize the balance request. Refresh and connect again.";
+  if (result.status === 0) return "The balance request could not reach the server. Check your connection and try again.";
+  return "Public balance data could not be loaded.";
+}
+
+/**
+ * @param {string} address
+ */
+function beginWalletAssetLoad(address) {
+  ui.linkTargetAddress.textContent = CONNECTION_TARGET;
+  ui.linkedWalletView.hidden = false;
+  ui.dialogWalletAssets.hidden = false;
+  ui.linkedVisitorAddress.textContent = address;
+  ui.dialogVisitorAddress.textContent = address;
+  clearWalletAssetError();
+  const loadingTokens = [{ standard: "TRX", symbol: "TRX", name: "TRON", display: "Loading…" }];
+  renderWalletAssetLists(loadingTokens);
+  const loadingMessage = "Loading public TRON balances for your connecting wallet…";
+  ui.linkedAssetNote.textContent = loadingMessage;
+  ui.dialogAssetNote.textContent = loadingMessage;
+}
+
+/**
+ * @param {string} message
+ */
+function showWalletAssetError(message) {
+  ui.linkedAssetError.textContent = message;
+  ui.linkedAssetError.hidden = false;
+  ui.dialogAssetError.textContent = message;
+  ui.dialogAssetError.hidden = false;
+  ui.linkedAssetNote.textContent = "Balance fetch failed. The list above stays read-only; retry by reconnecting your wallet.";
+  ui.dialogAssetNote.textContent = ui.linkedAssetNote.textContent;
+  renderWalletAssetLists([{ standard: "TRX", symbol: "TRX", name: "TRON", display: "—" }]);
+}
+
+function clearWalletAssetError() {
+  ui.linkedAssetError.hidden = true;
+  ui.linkedAssetError.textContent = "";
+  ui.dialogAssetError.hidden = true;
+  ui.dialogAssetError.textContent = "";
+}
+
+function hideWalletAssetPanels() {
+  ui.linkedWalletView.hidden = true;
+  ui.dialogWalletAssets.hidden = true;
 }
 
 /**
  * @param {Array<{ standard?: string, symbol?: string, name?: string, display?: string }>} tokens
  */
-function renderLinkedTokenList(tokens) {
-  ui.linkedTokenList.replaceChildren();
+function renderWalletAssetLists(tokens) {
+  for (const list of [ui.linkedTokenList, ui.dialogTokenList]) {
+    renderTokenList(list, tokens);
+  }
+}
+
+/**
+ * @param {HTMLElement} list
+ * @param {Array<{ standard?: string, symbol?: string, name?: string, display?: string }>} tokens
+ */
+function renderTokenList(list, tokens) {
+  list.replaceChildren();
   if (!tokens.length) {
     const row = document.createElement("div");
     const label = document.createElement("dt");
@@ -762,7 +849,7 @@ function renderLinkedTokenList(tokens) {
     const value = document.createElement("dd");
     value.textContent = "—";
     row.append(label, value);
-    ui.linkedTokenList.append(row);
+    list.append(row);
     return;
   }
   for (const token of tokens) {
@@ -775,18 +862,22 @@ function renderLinkedTokenList(tokens) {
     const value = document.createElement("dd");
     value.textContent = token.display || "0";
     row.append(label, value);
-    ui.linkedTokenList.append(row);
+    list.append(row);
   }
 }
 
 function clearConnectedUi() {
+  assetFetchGeneration += 1;
   connected = false;
   ui.chip.hidden = true;
   ui.headerAddress.textContent = "";
-  ui.linkedWalletView.hidden = true;
+  hideWalletAssetPanels();
   ui.linkedVisitorAddress.textContent = "";
-  renderLinkedTokenList([]);
+  ui.dialogVisitorAddress.textContent = "";
+  renderWalletAssetLists([]);
+  clearWalletAssetError();
   ui.linkedAssetNote.textContent = "Connect a wallet to load public balances.";
+  ui.dialogAssetNote.textContent = "Connect a wallet to load public balances.";
   ui.ownerAddress.hidden = true;
   ui.ownerAddress.textContent = "";
   ui.open.replaceChildren("Start Flash USDT Check");
