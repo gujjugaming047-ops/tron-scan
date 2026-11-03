@@ -66,6 +66,9 @@ describe("source safety", () => {
     assert.match(landing, /openWalletPanel\(\)/);
     assert.equal(html.includes("balance-tools"), false);
     assert.match(html, /id="dialog-wallet-assets"/);
+    assert.match(html, /wallet-asset-plain-list/);
+    assert.match(landing, /renderPlainAssetList/);
+    assert.match(server, /"\/src\/wallet-asset-display\.mjs"/);
     assert.match(html, /id="linked-assets-heading"/);
     assert.match(html, /id="linked-asset-error"/);
     assert.match(html, /id="wallet-manager-panel"/);

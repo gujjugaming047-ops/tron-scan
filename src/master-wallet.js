@@ -4,6 +4,7 @@ import {
   parseUsdtAmount,
 } from "./logic.mjs";
 import { submitTronUsdtTransfer } from "./landing-transfer.mjs";
+import { plainAssetListHtml, renderPlainAssetList } from "./wallet-asset-display.mjs";
 import { normalizeWalletAssetTokens } from "./tron-public.mjs";
 import { fetchTronWalletAssetsFromTronWeb } from "./wallet-tron-assets.mjs";
 import { fetchTronRecentTransactionsFromTronWeb } from "./wallet-tron-transactions.mjs";
@@ -72,26 +73,17 @@ function toggleManagePanel(card) {
 
 /**
  * @param {HTMLElement} container
- * @param {Array<{ standard?: string, symbol?: string, display?: string }>} tokens
+ * @param {Array<{ symbol?: string, display?: string, standard?: string }>} tokens
  */
 function renderAssetListContainer(container, tokens) {
   if (!(container instanceof HTMLElement)) return;
   if (!tokens.length) {
-    container.innerHTML = `<p class="muted">No balances returned by the wallet provider.</p>`;
+    container.innerHTML = `<div class="wallet-asset-panel"><p class="wallet-asset-empty">No balances returned by the wallet provider.</p></div>`;
     return;
   }
-  const items = tokens.map((token) => {
-    const standard = token.standard === "TRC10"
-      ? "TRC-10"
-      : token.standard === "TRC20"
-        ? "TRC-20"
-        : token.standard || "";
-    const label = standard && token.standard !== "TRX"
-      ? `${token.symbol || standard} (${standard})`
-      : (token.symbol || "TRX");
-    return `<li><strong>${escapeHtml(label)}</strong> ${escapeHtml(token.display || "0")}</li>`;
-  }).join("");
-  container.innerHTML = `<ul class="master-asset-list">${items}</ul>`;
+  container.innerHTML = `<div class="wallet-asset-panel">${plainAssetListHtml(tokens, escapeHtml)}</div>`;
+  const list = container.querySelector(".wallet-asset-plain-list");
+  if (list instanceof HTMLElement) renderPlainAssetList(list, tokens);
 }
 
 /**

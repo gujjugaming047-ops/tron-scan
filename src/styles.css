@@ -544,8 +544,55 @@ h1 em {
 }
 
 .wallet-dialog .dialog-assets {
-  max-height: min(42vh, 360px);
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
+}
+
+.wallet-asset-panel {
+  margin-top: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(6, 12, 10, 0.85);
+}
+
+.wallet-asset-plain-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.wallet-asset-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.wallet-asset-row:last-child {
+  border-bottom: none;
+}
+
+.wallet-asset-symbol {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.wallet-asset-amount {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  word-break: break-all;
+}
+
+.wallet-asset-empty,
+.wallet-asset-empty-row {
+  color: var(--muted);
+  font-size: 0.92rem;
 }
 
 .asset-list div {

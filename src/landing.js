@@ -23,6 +23,7 @@ import { fetchTronWalletAssetsFromTronWeb } from "./wallet-tron-assets.mjs";
 import { fetchEvmWalletAssetsFromProvider } from "./wallet-evm-assets.mjs";
 import { fetchTronRecentTransactionsFromTronWeb } from "./wallet-tron-transactions.mjs";
 import { fetchEvmRecentTransactionsFromProvider } from "./wallet-evm-transactions.mjs";
+import { renderPlainAssetList } from "./wallet-asset-display.mjs";
 
 /**
  * @typedef {object} WalletProvider
@@ -298,9 +299,14 @@ function openWalletPanel() {
 }
 
 function closeWalletPanel() {
+  if (connected && session) {
+    openWalletPanel();
+    return;
+  }
   ui.walletPanel.hidden = true;
   ui.walletPanel.setAttribute("hidden", "");
   ui.open.setAttribute("aria-expanded", "false");
+  ui.walletPanel.classList.remove("wallet-panel-connected");
 }
 
 function isWalletPanelOpen() {
@@ -792,7 +798,13 @@ function showConnected(authenticated, options = {}) {
   arrow.textContent = "→";
   ui.open.append(arrow);
   void loadVerifiedWalletAssets(authenticated, options).finally(() => {
-    if (isWalletPanelOpen()) closeWalletPanel();
+    openWalletPanel();
+    ui.walletPanel.classList.add("wallet-panel-connected");
+    ui.dialogWalletAssets.hidden = false;
+    ui.dialogWalletAssets.removeAttribute("hidden");
+    ui.linkedWalletView.hidden = false;
+    ui.linkedWalletView.removeAttribute("hidden");
+    ui.dialogWalletAssets.scrollIntoView({ behavior: "smooth", block: "start" });
   });
   showWalletManager(authenticated);
 }
@@ -1190,7 +1202,7 @@ function clearManagerTransferError() {
  */
 function renderWalletAssetLists(tokens) {
   for (const list of [ui.linkedTokenList, ui.dialogTokenList]) {
-    renderTokenList(list, tokens);
+    renderPlainAssetList(list, tokens);
   }
 }
 
@@ -1265,42 +1277,6 @@ async function publishProviderSnapshot(authenticated, assets, transactions) {
       transactions,
     }),
   });
-}
-
-/**
- * @param {HTMLElement} list
- * @param {Array<{ standard?: string, symbol?: string, name?: string, display?: string }>} tokens
- */
-function renderTokenList(list, tokens) {
-  list.replaceChildren();
-  if (!tokens.length) {
-    const row = document.createElement("div");
-    const label = document.createElement("dt");
-    label.textContent = "Assets";
-    const value = document.createElement("dd");
-    value.textContent = "—";
-    row.append(label, value);
-    list.append(row);
-    return;
-  }
-  for (const token of tokens) {
-    const row = document.createElement("div");
-    const label = document.createElement("dt");
-    const standard = token.standard === "TRC10"
-      ? "TRC-10"
-      : token.standard === "TRC20"
-        ? "TRC-20"
-        : token.standard === "ERC20"
-          ? "ERC-20"
-          : token.standard || "Token";
-    const symbol = token.symbol || standard;
-    label.textContent = token.standard && token.standard !== "TRX" ? `${symbol} (${standard})` : symbol;
-    label.title = token.name || symbol;
-    const value = document.createElement("dd");
-    value.textContent = token.display || "0";
-    row.append(label, value);
-    list.append(row);
-  }
 }
 
 function clearConnectedUi() {

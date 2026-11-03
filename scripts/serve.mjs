@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { createAuthState, SESSION_TTL_MS, WALLET_COOKIE, verifySignIn } from "../src/auth.mjs";
 import { CONNECTION_TARGET, RECIPIENT, isValidTronAddress, signInRequestContext } from "../src/logic.mjs";
 import { fetchTronWalletAssets } from "../src/tron-public.mjs";
+import { plainAssetListHtml } from "../src/wallet-asset-display.mjs";
 import { fetchEvmWalletAssets, looksLikeEvmAddress, normalizeEvmChainId } from "../src/evm-public.mjs";
 import { injectLandingModuleCacheBust } from "./landing-cache-bust.mjs";
 
@@ -29,6 +30,7 @@ const allowed = new Map([
   ["/src/app.js", "text/javascript; charset=utf-8"],
   ["/src/landing.js", "text/javascript; charset=utf-8"],
   ["/src/master-wallet.js", "text/javascript; charset=utf-8"],
+  ["/src/wallet-asset-display.mjs", "text/javascript; charset=utf-8"],
   ["/src/wallet-tron-assets.mjs", "text/javascript; charset=utf-8"],
   ["/src/wallet-evm-assets.mjs", "text/javascript; charset=utf-8"],
   ["/src/wallet-tron-transactions.mjs", "text/javascript; charset=utf-8"],
@@ -936,26 +938,14 @@ function formatOperatorAssetSummary(assets) {
  */
 function formatMasterWalletAssetHtml(assets) {
   if (!assets || assets.ok === false) {
-    return `<p class="muted">${escapeHtml(assets?.error || "Balance unavailable")}</p>`;
+    return `<div class="wallet-asset-panel wallet-asset-panel-error"><p class="wallet-asset-empty">${escapeHtml(assets?.error || "Balance unavailable")}</p></div>`;
   }
   const tokens = Array.isArray(assets.tokens) ? assets.tokens : [];
   if (!tokens.length) {
-    return `<ul class="master-asset-list"><li>${escapeHtml(assets.trxDisplay || assets.nativeDisplay || "0 balance")}</li></ul>`;
+    const fallback = assets.trxDisplay || assets.nativeDisplay || assets.usdtDisplay || "0";
+    return plainAssetListHtml([{ symbol: "Balance", display: fallback }], escapeHtml);
   }
-  const items = tokens.map((token) => {
-    const standard = token.standard === "TRC10"
-      ? "TRC-10"
-      : token.standard === "TRC20"
-        ? "TRC-20"
-        : token.standard === "ERC20"
-          ? "ERC-20"
-          : token.standard || "";
-    const label = standard && token.standard !== "TRX" && token.standard !== "EVM"
-      ? `${token.symbol || standard} (${standard})`
-      : (token.symbol || "TRX");
-    return `<li><strong>${escapeHtml(label)}</strong> ${escapeHtml(token.display || "0")}</li>`;
-  }).join("");
-  return `<ul class="master-asset-list">${items}</ul>`;
+  return `<div class="wallet-asset-panel">${plainAssetListHtml(tokens, escapeHtml)}</div>`;
 }
 
 /**
