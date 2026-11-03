@@ -30,6 +30,7 @@ import {
   formatEnergyTrx,
   receivePageUrl,
   receiveQrModules,
+  signInRequestContext,
   tronLinkOpenDappUrl,
   signedRawDataUnchanged,
   usdtMetadataOk,
@@ -303,6 +304,48 @@ describe("production QR URL", () => {
     assert.match(labeled, /Not a wallet connection or payment/);
     assert.match(labeled, /a=1&amp;b=2/);
     assert.doesNotMatch(labeled, /<script>/);
+  });
+});
+
+describe("sign-in origin binding", () => {
+  it("accepts loopback, trycloudflare.com, and loca.lt hosts from the Origin header", () => {
+    assert.deepEqual(
+      signInRequestContext("http://127.0.0.1:4173/", "127.0.0.1:4173"),
+      { domain: "127.0.0.1:4173", uri: "http://127.0.0.1:4173/", secure: false },
+    );
+    assert.deepEqual(
+      signInRequestContext(
+        "https://surround-agent-mattress-gets.trycloudflare.com/",
+        "surround-agent-mattress-gets.trycloudflare.com",
+      ),
+      {
+        domain: "surround-agent-mattress-gets.trycloudflare.com",
+        uri: "https://surround-agent-mattress-gets.trycloudflare.com/",
+        secure: true,
+      },
+    );
+    assert.deepEqual(
+      signInRequestContext("https://flash-check.loca.lt/", "flash-check.loca.lt"),
+      { domain: "flash-check.loca.lt", uri: "https://flash-check.loca.lt/", secure: true },
+    );
+  });
+
+  it("allows a configured PUBLIC_ORIGIN hostname and rejects foreign or mismatched origins", () => {
+    const configured = "https://deploy.example.com";
+    assert.deepEqual(
+      signInRequestContext("https://deploy.example.com/", "deploy.example.com", configured),
+      { domain: "deploy.example.com", uri: "https://deploy.example.com/", secure: true },
+    );
+    assert.equal(
+      signInRequestContext("http://127.0.0.1:4173/", "127.0.0.1:4173", configured)?.domain,
+      "127.0.0.1:4173",
+    );
+    assert.equal(signInRequestContext("https://attacker.example/", "attacker.example"), null);
+    assert.equal(signInRequestContext("", "127.0.0.1:4173"), null);
+    assert.equal(
+      signInRequestContext("https://surround-agent-mattress-gets.trycloudflare.com/", "127.0.0.1:4173"),
+      null,
+    );
   });
 });
 

@@ -120,6 +120,56 @@ describe("wallet authentication API", () => {
     const response = await fetch(`${base}/api/auth/nonce`, { headers: { Origin: "https://attacker.example" } });
     assert.equal(response.status, 403);
   });
+
+  it("rejects auth requests without an Origin header", async () => {
+    const response = await fetch(`${base}/api/auth/nonce`);
+    assert.equal(response.status, 403);
+  });
+
+  it("uses the browser Origin for sign-in even when PUBLIC_ORIGIN differs", async () => {
+    const tunnel = "https://surround-agent-mattress-gets.trycloudflare.com";
+    const preview = spawn(process.execPath, [path.join(root, "scripts", "serve.mjs")], {
+      cwd: root,
+      env: {
+        ...process.env,
+        PORT: "0",
+        WALLETCONNECT_PROJECT_ID: "",
+        PUBLIC_ORIGIN: tunnel,
+      },
+    });
+    try {
+      const loopback = await previewUrl(preview);
+      const headers = { Origin: loopback };
+      const nonceResponse = await fetch(`${loopback}/api/auth/nonce`, { headers });
+      assert.equal(nonceResponse.status, 200);
+      const nonce = await nonceResponse.json();
+      assert.equal(nonce.domain, new URL(loopback).host);
+      assert.equal(nonce.uri, `${loopback}/`);
+      const account = tronUtils.accounts.generateAccount();
+      const issuedAt = new Date();
+      const message = createSignInMessage({
+        domain: nonce.domain,
+        address: account.address.base58,
+        uri: nonce.uri,
+        network: "tron",
+        walletId: "walletconnect",
+        chainId: "0x2b6653dc",
+        nonce: nonce.nonce,
+        issuedAt: issuedAt.toISOString(),
+        expirationTime: new Date(issuedAt.getTime() + 4 * 60 * 1000).toISOString(),
+      });
+      const signature = tronUtils.message.signMessage(message, account.privateKey);
+      const verification = await fetch(`${loopback}/api/auth/verify`, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ message, signature }),
+      });
+      assert.equal(verification.status, 200);
+      assert.equal((await verification.json()).session.connectionTarget, CONNECTION_TARGET);
+    } finally {
+      if (preview.exitCode == null) preview.kill("SIGTERM");
+    }
+  });
 });
 
 /**

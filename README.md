@@ -18,7 +18,7 @@ The app does not contain or invent a project ID. Choosing **WalletConnect** disp
 
 MetaMask, Trust Wallet, and TronLink follow the same sign-in pattern after account approval. Verified TRON mainnet sessions receive the same connection target association.
 
-Run `npm start` and open `http://127.0.0.1:4173` to preview it. Run `npm run check` for syntax, type, unit, safety, and build checks. The authentication API runs in the Node preview server; production deployment therefore needs the same server process, HTTPS, `WALLETCONNECT_PROJECT_ID`, and (when behind a proxy) `PUBLIC_ORIGIN=https://your-host` so signed messages are pinned to the deployed origin.
+Run `npm start` and open `http://127.0.0.1:4173` to preview it. Run `npm run check` for syntax, type, unit, safety, and build checks. The authentication API runs in the Node preview server; production deployment therefore needs the same server process, HTTPS, `WALLETCONNECT_PROJECT_ID`, and (when behind a proxy) an optional `PUBLIC_ORIGIN=https://your-host` to allow that hostname in addition to local preview and tunnel hosts (`*.trycloudflare.com`, `*.loca.lt`). Sign-in messages are always bound to the browser `Origin` header that loaded the page.
 
 ## Legacy payment implementation
 

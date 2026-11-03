@@ -461,6 +461,67 @@ export function validateProductionQrUrl(input) {
 }
 
 /**
+ * Hostnames allowed to bind sign-in messages when they match the browser Origin header.
+ * @param {string} hostname
+ */
+export function isAllowedSignInHostname(hostname) {
+  if (typeof hostname !== "string" || hostname.length === 0) return false;
+  const host = hostname.toLowerCase().replace(/\.$/, "");
+  if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]") return true;
+  if (host === "trycloudflare.com" || host.endsWith(".trycloudflare.com")) return true;
+  if (host === "loca.lt" || host.endsWith(".loca.lt")) return true;
+  return false;
+}
+
+/**
+ * @param {unknown} configuredOrigin
+ * @param {string} hostname
+ */
+export function isConfiguredSignInHostname(configuredOrigin, hostname) {
+  if (typeof configuredOrigin !== "string" || configuredOrigin.length === 0) return false;
+  if (typeof hostname !== "string" || hostname.length === 0) return false;
+  try {
+    return new URL(configuredOrigin).hostname.toLowerCase() === hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve the domain and URI pinned into login messages from the browser request.
+ * @param {unknown} originHeader
+ * @param {unknown} hostHeader
+ * @param {unknown} [configuredOrigin]
+ * @returns {{ domain: string, uri: string, secure: boolean } | null}
+ */
+export function signInRequestContext(originHeader, hostHeader, configuredOrigin = "") {
+  if (typeof originHeader !== "string" || originHeader.length === 0 || originHeader.length > 2048) return null;
+  if (/\s/.test(originHeader)) return null;
+  let parsed;
+  try {
+    parsed = new URL(originHeader);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  if (!parsed.host || parsed.username || parsed.password) return null;
+  const hostname = parsed.hostname;
+  const configured = typeof configuredOrigin === "string" ? configuredOrigin.trim() : "";
+  const allowed = isAllowedSignInHostname(hostname)
+    || isConfiguredSignInHostname(configured, hostname);
+  if (!allowed) return null;
+  if (typeof hostHeader === "string" && hostHeader.length > 0
+    && parsed.host.toLowerCase() !== hostHeader.toLowerCase()) {
+    return null;
+  }
+  return {
+    domain: parsed.host,
+    uri: `${parsed.origin}/`,
+    secure: parsed.protocol === "https:",
+  };
+}
+
+/**
  * @param {string} svg
  * @param {string} url
  */

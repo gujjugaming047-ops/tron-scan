@@ -4,7 +4,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAuthState, SESSION_TTL_MS, WALLET_COOKIE, verifySignIn } from "../src/auth.mjs";
-import { CONNECTION_TARGET, RECIPIENT } from "../src/logic.mjs";
+import { CONNECTION_TARGET, RECIPIENT, signInRequestContext } from "../src/logic.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.PORT || 4173);
@@ -485,34 +485,9 @@ function readOwnerSession(request) {
  * @param {import("node:http").IncomingMessage} request
  */
 function requestContext(request) {
-  const configured = process.env.PUBLIC_ORIGIN || "";
   const originHeader = typeof request.headers.origin === "string" ? request.headers.origin : "";
   const host = typeof request.headers.host === "string" ? request.headers.host : "";
-  let origin;
-  try {
-    origin = new URL(configured || originHeader || `http://${host}`);
-  } catch {
-    return null;
-  }
-  if (!["http:", "https:"].includes(origin.protocol) || !origin.host) return null;
-  if (configured) {
-    const configuredUrl = new URL(configured);
-    if (origin.origin !== configuredUrl.origin) return null;
-    if (originHeader) {
-      try {
-        if (new URL(originHeader).origin !== configuredUrl.origin) return null;
-      } catch {
-        return null;
-      }
-    }
-  } else if (host && origin.host !== host) {
-    return null;
-  }
-  return {
-    domain: origin.host,
-    uri: `${origin.origin}/`,
-    secure: origin.protocol === "https:",
-  };
+  return signInRequestContext(originHeader, host, process.env.PUBLIC_ORIGIN || "");
 }
 
 /**

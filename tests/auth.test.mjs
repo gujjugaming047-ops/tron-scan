@@ -114,6 +114,24 @@ describe("wallet authentication", () => {
     assert.match(verified.error, /expired|time/i);
     assert.equal(parseSignInMessage(expired)?.walletId, "metamask");
     assert.equal(parseSignInMessage(expired)?.chainId, "1");
+
+    const wrongOrigin = loginMessage({
+      address: account.address,
+      nonce: state.issueNonce(now).nonce,
+      issuedAt: new Date(now).toISOString(),
+      expirationTime: new Date(now + NONCE_TTL_MS - 1).toISOString(),
+    }).replace(`URI: ${uri}`, "URI: https://attacker.example/");
+    const wrongSignature = await account.signMessage({ message: wrongOrigin });
+    const originMismatch = await verifySignIn({
+      message: wrongOrigin,
+      signature: wrongSignature,
+      expectedDomain: domain,
+      expectedUri: uri,
+      consumeNonce: (nonce, time) => state.consumeNonce(nonce, time),
+      now,
+    });
+    assert.equal(originMismatch.ok, false);
+    if (!originMismatch.ok) assert.match(originMismatch.error, /origin/i);
   });
 });
 
