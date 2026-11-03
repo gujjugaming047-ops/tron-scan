@@ -104,7 +104,7 @@
 
     <section class="owner-pairing" id="owner-pairing" aria-labelledby="owner-pairing-title">
       <p class="owner-kicker" id="owner-pairing-title">Owner approval required</p>
-      <p class="owner-copy">Pair the configured owner wallet first. Only this TRON address can approve:</p>
+      <p class="owner-copy" id="pairing-copy">Pair the configured owner wallet first. Only this TRON address can approve:</p>
       <p class="connected-address owner-address" id="owner-address">TG94XL9N1uVHPM4U4zcpYGc6w1i7nUBuiq</p>
       <div class="owner-qr-wrap" id="owner-qr-wrap" hidden>
         <img id="owner-qr" alt="WalletConnect QR code for owner approval">
@@ -133,6 +133,11 @@
       <button class="wallet-option" id="connect-injected" type="button">
         <span class="wallet-logo injected-logo" aria-hidden="true">W</span>
         <span><strong id="injected-wallet-name">Browser wallet</strong><small>Use another detected provider</small></span>
+        <span class="option-arrow" aria-hidden="true">→</span>
+      </button>
+      <button class="wallet-option" id="connect-walletconnect" type="button">
+        <span class="wallet-logo walletconnect-logo" aria-hidden="true">W</span>
+        <span><strong>WalletConnect</strong><small>Scan a QR code with a TRON wallet</small></span>
         <span class="option-arrow" aria-hidden="true">→</span>
       </button>
     </div>

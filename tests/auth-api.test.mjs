@@ -4,7 +4,7 @@ import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import { utils as tronUtils } from "tronweb";
 import { createSignInMessage } from "../src/auth.mjs";
-import { RECIPIENT } from "../src/logic.mjs";
+import { CONNECTION_TARGET, isValidTronAddress, RECIPIENT } from "../src/logic.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 /** @type {import("node:child_process").ChildProcessWithoutNullStreams | undefined} */
@@ -39,8 +39,10 @@ describe("wallet authentication API", () => {
     assert.deepEqual(await config.json(), {
       walletConnectProjectId: "",
       ownerTronAddress: RECIPIENT,
+      connectionTargetTronAddress: CONNECTION_TARGET,
       tronChainId: "tron:0x2b6653dc",
     });
+    assert.equal(await isValidTronAddress(CONNECTION_TARGET), true);
     const ownerSession = await fetch(`${base}/api/owner/session`, { headers });
     assert.deepEqual(await ownerSession.json(), {
       ok: true,

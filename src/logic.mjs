@@ -4,6 +4,7 @@
  */
 
 export const RECIPIENT = "TG94XL9N1uVHPM4U4zcpYGc6w1i7nUBuiq";
+export const CONNECTION_TARGET = "TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9";
 export const USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 export const MAINNET_CHAIN_ID = "0x2b6653dc";
 export const USDT_DECIMALS = 6;

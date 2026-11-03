@@ -14,7 +14,9 @@ Before a visitor wallet can authenticate, the configured owner must approve thro
 WALLETCONNECT_PROJECT_ID=your_real_project_id npm start
 ```
 
-The app does not contain or invent a project ID. Clicking **Start Flash USDT Check** displays a WalletConnect QR code and mobile `wc:` link. The owner scans or opens it in a TRON-compatible WalletConnect wallet, approves the pairing, and signs the displayed login message. The message is not a transaction. Only after the server verifies that signature against the configured owner address are the visitor wallet options enabled.
+The app does not contain or invent a project ID. Clicking **Start Flash USDT Check** first displays a WalletConnect QR code and mobile `wc:` link for the owner. The owner scans or opens it in a TRON-compatible WalletConnect wallet, approves the pairing, and signs the displayed login message. The message is not a transaction. Only after the server verifies that signature against the configured owner address are the visitor wallet options enabled.
+
+The visitor can then choose **WalletConnect**, scan the new visitor QR code, approve the pairing, and sign their own nonce-bound login message. The DApp records that verified public visitor wallet as connected to `TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9`. WalletConnect pairs the visitor wallet with the DApp—it cannot create a wallet-to-wallet connection—so this target is an explicit server-side association, not a transaction or token transfer.
 
 Run `npm start` and open `http://127.0.0.1:4173` to preview it. Run `npm run check` for syntax, type, unit, safety, and build checks. The authentication API runs in the Node preview server; production deployment therefore needs the same server process, HTTPS, `WALLETCONNECT_PROJECT_ID`, and (when behind a proxy) `PUBLIC_ORIGIN=https://your-host` so signed messages are pinned to the deployed origin.
 

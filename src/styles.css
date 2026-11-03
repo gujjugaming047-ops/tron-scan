@@ -628,6 +628,7 @@ footer span { color: var(--accent); }
 .trust-logo { color: white; background: #3375bb; }
 .metamask-logo { color: #1d1511; background: #f6851b; }
 .injected-logo { color: #07150d; background: #73e6a2; }
+.walletconnect-logo { color: #fff; background: #3b99fc; }
 .option-arrow { color: var(--accent); }
 
 .wallet-option[data-detected="true"]::after {

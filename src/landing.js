@@ -7,7 +7,7 @@ import {
   shortenWalletAddress,
   walletHelpLink,
 } from "./wallet-state.mjs";
-import { RECIPIENT } from "./logic.mjs";
+import { CONNECTION_TARGET, RECIPIENT } from "./logic.mjs";
 
 /**
  * @typedef {object} WalletProvider
@@ -35,6 +35,7 @@ const ui = {
   tronLink: requiredButton("connect-tronlink"),
   trust: requiredButton("connect-trust"),
   injected: requiredButton("connect-injected"),
+  walletConnect: requiredButton("connect-walletconnect"),
   injectedName: requiredElement("injected-wallet-name"),
   retry: requiredButton("retry-wallets"),
   continueReadOnly: requiredAnchor("continue-read-only"),
@@ -49,6 +50,8 @@ const ui = {
   headerAddress: requiredElement("header-address"),
   disconnect: requiredButton("disconnect-wallet"),
   ownerPairing: requiredElement("owner-pairing"),
+  pairingTitle: requiredElement("owner-pairing-title"),
+  pairingCopy: requiredElement("pairing-copy"),
   ownerAddress: requiredElement("owner-address"),
   ownerQrWrap: requiredElement("owner-qr-wrap"),
   ownerQr: requiredImage("owner-qr"),
@@ -59,7 +62,7 @@ const ui = {
 
 /** @type {WalletDescriptor[]} */
 let providers = [];
-/** @type {{ address: string, network: "evm" | "tron", chainId: string, walletId: string, expiresAt: string } | null} */
+/** @type {{ address: string, network: "evm" | "tron", chainId: string, walletId: string, expiresAt: string, connectionTarget?: string } | null} */
 let session = null;
 /** @type {WalletDescriptor | null} */
 let activeWallet = null;
@@ -69,10 +72,20 @@ let boundProvider = null;
 let connected = false;
 let ownerApproved = false;
 let ownerPairingBusy = false;
+let ownerPairingAttempt = 0;
+let visitorPairingBusy = false;
+let visitorPairingAttempt = 0;
+/** @type {"owner" | "visitor"} */
+let pairingMode = "owner";
+let pairingCanCancel = true;
 /** @type {null | {
  * pairOwnerWallet: (options: { projectId: string, onUri: (uri: string) => void }) => Promise<{ address: string, chainId: string }>,
+ * pairVisitorWallet: (options: { projectId: string, onUri: (uri: string) => void }) => Promise<{ address: string, chainId: string }>,
+ * restoreVisitorWallet: (options: { projectId: string }) => Promise<{ address: string, chainId: string } | null>,
  * signOwnerMessage: (address: string, message: string) => Promise<string>,
+ * signVisitorMessage: (address: string, message: string) => Promise<string>,
  * disconnectOwnerWallet: () => Promise<void>,
+ * disconnectVisitorWallet: () => Promise<void>,
  * cancelOwnerPairing: () => void,
  * ownerPairingQr: (uri: string) => Promise<string>
  * }} */
@@ -106,10 +119,23 @@ ui.metaMask.addEventListener("click", () => void connectSelected("metamask"));
 ui.tronLink.addEventListener("click", () => void connectSelected("tronlink"));
 ui.trust.addEventListener("click", () => void connectSelected("trust"));
 ui.injected.addEventListener("click", () => void connectSelected("injected"));
+ui.walletConnect.addEventListener("click", () => void connectWalletConnect());
 ui.disconnect.addEventListener("click", () => void disconnectSession("Disconnected on this page. Your wallet remains available to other approved sites."));
-ui.cancelOwnerPairing.addEventListener("click", () => void cancelOwnerPairing());
+ui.cancelOwnerPairing.addEventListener("click", () => void cancelActivePairing());
 window.addEventListener("flashcheck:owner-walletconnect-disconnected", () => {
   void revokeOwnerApproval("The owner ended the WalletConnect session. Pair the owner wallet again.");
+});
+window.addEventListener("flashcheck:visitor-walletconnect-disconnected", () => {
+  if (session?.walletId === "walletconnect") {
+    void disconnectSession("The WalletConnect session ended. Connect again to continue.");
+  }
+});
+window.addEventListener("flashcheck:visitor-walletconnect-updated", (event) => {
+  if (session?.walletId !== "walletconnect") return;
+  const detail = /** @type {CustomEvent<{ address?: string, chainId?: string, changed?: boolean }>} */ (event).detail;
+  if (detail?.changed || !sameWalletAddress(detail?.address || "", session.address) || detail?.chainId !== session.chainId) {
+    void disconnectSession("The WalletConnect account or network changed. Connect again to verify it.");
+  }
 });
 
 discoverProviders();
@@ -205,19 +231,24 @@ async function openConnectionFlow() {
     await beginOwnerPairing();
     return;
   }
-  if (connected && session && activeWallet) showConnected(session);
+  if (connected && session) showConnected(session);
   else if (deferredState) showState(deferredState);
   else showOptions();
 }
 
 async function beginOwnerPairing() {
   if (ownerPairingBusy) return;
+  const attempt = ++ownerPairingAttempt;
+  pairingMode = "owner";
   ownerPairingBusy = true;
+  pairingCanCancel = true;
+  configurePairingPanel("Owner approval required", "Pair the configured owner wallet first. Only this TRON address can approve:", RECIPIENT);
   showOwnerPairing("Preparing secure WalletConnect pairing…");
   ui.cancelOwnerPairing.hidden = false;
   ui.cancelOwnerPairing.textContent = "Cancel pairing";
   try {
     const config = await fetchJson("/api/config");
+    assertOwnerPairingActive(attempt);
     if (!config.ok || config.body?.ownerTronAddress !== RECIPIENT) {
       throw new Error("The configured owner address could not be verified.");
     }
@@ -229,14 +260,18 @@ async function beginOwnerPairing() {
     const walletConnect = walletConnectClient ||= await import(walletConnectModulePath);
     const pairing = await walletConnect.pairOwnerWallet({
       projectId: config.body.walletConnectProjectId,
-      onUri: (/** @type {string} */ uri) => { void showOwnerPairingUri(uri); },
+      onUri: (/** @type {string} */ uri) => {
+        if (attempt === ownerPairingAttempt) void showOwnerPairingUri(uri);
+      },
     });
+    assertOwnerPairingActive(attempt);
     if (pairing.address !== RECIPIENT) {
       await walletConnect.disconnectOwnerWallet();
       throw new Error(`Paired wallet ${shortenWalletAddress(pairing.address)} does not match the configured owner.`);
     }
     setOwnerPairingStatus("Owner wallet paired. Approve the login message to verify ownership.", "pending");
     const nonce = await fetchJson("/api/owner/nonce");
+    assertOwnerPairingActive(attempt);
     if (!nonce.ok) throw new Error(nonce.body?.error || "Could not start owner approval.");
     const issuedAt = new Date();
     const expiration = new Date(Math.min(Date.parse(nonce.body.expiresAt), issuedAt.getTime() + 4 * 60 * 1000));
@@ -252,11 +287,15 @@ async function beginOwnerPairing() {
       expirationTime: expiration.toISOString(),
     });
     const signature = await walletConnect.signOwnerMessage(pairing.address, message);
+    assertOwnerPairingActive(attempt);
+    pairingCanCancel = false;
+    ui.cancelOwnerPairing.hidden = true;
     const verified = await fetchJson("/api/owner/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message, signature }),
     });
+    assertOwnerPairingActive(attempt);
     if (!verified.ok || verified.body?.session?.address !== RECIPIENT) {
       throw new Error(verified.body?.error || "The server could not verify owner approval.");
     }
@@ -269,6 +308,8 @@ async function beginOwnerPairing() {
     await restoreSession();
     if (!connected) showOptions();
   } catch (error) {
+    if (attempt !== ownerPairingAttempt) return;
+    pairingCanCancel = true;
     const rejected = isRejected(error) || /reject|declin|cancel/i.test(publicError(error));
     setOwnerPairingStatus(rejected
       ? "Owner rejected the WalletConnect request. No visitor session was connected."
@@ -278,7 +319,7 @@ async function beginOwnerPairing() {
     ui.cancelOwnerPairing.hidden = false;
     ui.cancelOwnerPairing.textContent = "Try owner pairing again";
   } finally {
-    ownerPairingBusy = false;
+    if (attempt === ownerPairingAttempt) ownerPairingBusy = false;
   }
 }
 
@@ -293,6 +334,126 @@ async function showOwnerPairingUri(uri) {
   ui.ownerDeepLink.href = uri;
   ui.ownerDeepLink.hidden = false;
   setOwnerPairingStatus("Scan with the owner’s compatible wallet, or open the mobile link, then approve pairing.", "pending");
+}
+
+/**
+ * Pair and authenticate a visitor through WalletConnect, then bind the verified
+ * visitor session to the configured connection target. This never requests a
+ * transaction.
+ */
+async function connectWalletConnect() {
+  if (busy || visitorPairingBusy) return;
+  const attempt = ++visitorPairingAttempt;
+  pairingMode = "visitor";
+  busy = true;
+  visitorPairingBusy = true;
+  pairingCanCancel = true;
+  setControlsDisabled(true);
+  configurePairingPanel(
+    "Connect visitor wallet",
+    "Scan with the visitor wallet. The verified connection will be associated with this TRON address:",
+    CONNECTION_TARGET,
+  );
+  showOwnerPairing("Preparing the visitor WalletConnect QR code…");
+  ui.cancelOwnerPairing.hidden = false;
+  ui.cancelOwnerPairing.textContent = "Cancel pairing";
+  try {
+    const config = await fetchJson("/api/config");
+    assertVisitorPairingActive(attempt);
+    if (!config.ok || config.body?.connectionTargetTronAddress !== CONNECTION_TARGET) {
+      throw new Error("The configured connection target could not be verified.");
+    }
+    if (!config.body.walletConnectProjectId) {
+      throw new Error("WalletConnect is not configured. Set WALLETCONNECT_PROJECT_ID on the server.");
+    }
+    const walletConnectModulePath = "/generated/walletconnect-client.js";
+    const walletConnect = walletConnectClient ||= await import(walletConnectModulePath);
+    const pairing = await walletConnect.pairVisitorWallet({
+      projectId: config.body.walletConnectProjectId,
+      onUri: (/** @type {string} */ uri) => {
+        if (attempt === visitorPairingAttempt) void showVisitorPairingUri(uri);
+      },
+    });
+    assertVisitorPairingActive(attempt);
+    setOwnerPairingStatus("Visitor wallet paired. Sign the login message to verify this public address.", "pending");
+    const nonce = await fetchJson("/api/auth/nonce");
+    assertVisitorPairingActive(attempt);
+    if (!nonce.ok) throw new Error(nonce.body?.error || "Could not start visitor authentication.");
+    const issuedAt = new Date();
+    const expiration = new Date(Math.min(Date.parse(nonce.body.expiresAt), issuedAt.getTime() + 4 * 60 * 1000));
+    const message = createSignInMessage({
+      domain: nonce.body.domain,
+      address: pairing.address,
+      uri: nonce.body.uri,
+      network: "tron",
+      walletId: "walletconnect",
+      chainId: "0x2b6653dc",
+      nonce: nonce.body.nonce,
+      issuedAt: issuedAt.toISOString(),
+      expirationTime: expiration.toISOString(),
+    });
+    const signature = await walletConnect.signVisitorMessage(pairing.address, message);
+    assertVisitorPairingActive(attempt);
+    pairingCanCancel = false;
+    ui.cancelOwnerPairing.hidden = true;
+    const verified = await fetchJson("/api/auth/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, signature }),
+    });
+    assertVisitorPairingActive(attempt);
+    if (!verified.ok || !verified.body?.session
+      || !sameWalletAddress(verified.body.session.address, pairing.address)
+      || verified.body.session.connectionTarget !== CONNECTION_TARGET) {
+      throw new Error(verified.body?.error || "The server could not verify the visitor wallet.");
+    }
+    const recorded = await fetchJson("/api/wallet-connections", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address: pairing.address }),
+    });
+    assertVisitorPairingActive(attempt);
+    if (!recorded.ok || recorded.body?.connectionTarget !== CONNECTION_TARGET) {
+      throw new Error(recorded.body?.error || "The verified connection could not be recorded.");
+    }
+    const authenticated = /** @type {NonNullable<typeof session>} */ (verified.body.session);
+    session = authenticated;
+    activeWallet = null;
+    ui.ownerQrWrap.hidden = true;
+    ui.ownerDeepLink.hidden = true;
+    ui.cancelOwnerPairing.hidden = true;
+    showConnected(authenticated);
+  } catch (error) {
+    if (attempt !== visitorPairingAttempt) return;
+    pairingCanCancel = true;
+    const rejected = isRejected(error) || /reject|declin|cancel/i.test(publicError(error));
+    setOwnerPairingStatus(rejected
+      ? "The visitor rejected the WalletConnect request. No wallet was connected."
+      : publicError(error), "rejected");
+    ui.ownerQrWrap.hidden = true;
+    ui.ownerDeepLink.hidden = true;
+    ui.cancelOwnerPairing.hidden = false;
+    ui.cancelOwnerPairing.textContent = "Try visitor pairing again";
+  } finally {
+    if (attempt === visitorPairingAttempt) {
+      busy = false;
+      visitorPairingBusy = false;
+      setControlsDisabled(false);
+    }
+  }
+}
+
+/**
+ * @param {string} uri
+ */
+async function showVisitorPairingUri(uri) {
+  if (!walletConnectClient) return;
+  const qr = await walletConnectClient.ownerPairingQr(uri);
+  ui.ownerQr.src = qr;
+  ui.ownerQrWrap.hidden = false;
+  ui.ownerDeepLink.href = uri;
+  ui.ownerDeepLink.hidden = false;
+  setOwnerPairingStatus("Scan with any compatible TRON wallet, approve pairing, then sign the login message.", "pending");
 }
 
 /**
@@ -317,17 +478,64 @@ function showOwnerPairing(message) {
   setOwnerPairingStatus(message, "pending");
 }
 
-async function cancelOwnerPairing() {
+async function cancelActivePairing() {
+  if (!pairingCanCancel) return;
+  if (pairingMode === "visitor" && !visitorPairingBusy) {
+    await connectWalletConnect();
+    return;
+  }
+  if (visitorPairingBusy) {
+    visitorPairingAttempt += 1;
+    walletConnectClient?.cancelOwnerPairing?.();
+    visitorPairingBusy = false;
+    busy = false;
+    ui.ownerQrWrap.hidden = true;
+    ui.ownerDeepLink.hidden = true;
+    setOwnerPairingStatus("Visitor pairing was cancelled. No wallet was connected.", "rejected");
+    ui.cancelOwnerPairing.textContent = "Try visitor pairing again";
+    setControlsDisabled(false);
+    return;
+  }
   if (!ownerPairingBusy) {
     await beginOwnerPairing();
     return;
   }
+  ownerPairingAttempt += 1;
   await walletConnectClient?.cancelOwnerPairing?.();
   ownerPairingBusy = false;
   ui.ownerQrWrap.hidden = true;
   ui.ownerDeepLink.hidden = true;
   setOwnerPairingStatus("Owner pairing was cancelled. No visitor session was connected.", "rejected");
   ui.cancelOwnerPairing.textContent = "Try owner pairing again";
+}
+
+/**
+ * @param {number} attempt
+ */
+function assertVisitorPairingActive(attempt) {
+  if (attempt !== visitorPairingAttempt) {
+    throw Object.assign(new Error("Visitor pairing was cancelled."), { code: 4000 });
+  }
+}
+
+/**
+ * @param {number} attempt
+ */
+function assertOwnerPairingActive(attempt) {
+  if (attempt !== ownerPairingAttempt) {
+    throw Object.assign(new Error("Owner pairing was cancelled."), { code: 4000 });
+  }
+}
+
+/**
+ * @param {string} title
+ * @param {string} copy
+ * @param {string} address
+ */
+function configurePairingPanel(title, copy, address) {
+  ui.pairingTitle.textContent = title;
+  ui.pairingCopy.textContent = copy;
+  ui.ownerAddress.textContent = address;
 }
 
 /**
@@ -352,6 +560,29 @@ async function restoreSession() {
   }
   const restored = /** @type {NonNullable<typeof session>} */ (response.body.session);
   session = restored;
+  if (restored.walletId === "walletconnect") {
+    const config = await fetchJson("/api/config");
+    try {
+      if (!config.ok || !config.body?.walletConnectProjectId) throw new Error("WalletConnect is not configured.");
+      const walletConnectModulePath = "/generated/walletconnect-client.js";
+      const walletConnect = walletConnectClient ||= await import(walletConnectModulePath);
+      const pairing = await walletConnect.restoreVisitorWallet({ projectId: config.body.walletConnectProjectId });
+      if (!pairing || !sameWalletAddress(pairing.address, restored.address) || pairing.chainId !== restored.chainId) {
+        await disconnectSession("The saved WalletConnect pairing no longer matches this session.");
+        return;
+      }
+      activeWallet = null;
+      showConnected(restored);
+    } catch {
+      clearConnectedUi();
+      rememberState({
+        kind: "error",
+        title: "WalletConnect is not available",
+        message: "Your server session exists, but the WalletConnect pairing could not be restored. Connect again.",
+      });
+    }
+    return;
+  }
   discoverProviders();
   const wallet = providers.find((item) => item.id === restored.walletId && item.network === restored.network);
   if (!wallet) {
@@ -570,15 +801,19 @@ async function handleWalletChange(message) {
  * @param {string} message
  */
 async function disconnectSession(message) {
-  await fetchJson("/api/auth/logout", { method: "POST" });
+  const previous = session;
   session = null;
   activeWallet = null;
+  if (previous?.walletId === "walletconnect") {
+    await walletConnectClient?.disconnectVisitorWallet?.().catch(() => {});
+  }
+  await fetchJson("/api/auth/logout", { method: "POST" });
   clearConnectedUi();
   rememberState({ kind: "error", title: "Wallet disconnected", message });
 }
 
 /**
- * @param {{ address: string, network: "evm" | "tron", chainId: string, walletId: string, expiresAt: string }} authenticated
+ * @param {{ address: string, network: "evm" | "tron", chainId: string, walletId: string, expiresAt: string, connectionTarget?: string }} authenticated
  */
 function showConnected(authenticated) {
   session = authenticated;
@@ -595,7 +830,7 @@ function showConnected(authenticated) {
     showState({
       kind: "success",
       title: "Wallet verified",
-      message: `${authenticated.network === "tron" ? "TRON" : "EVM"} session active until ${new Date(authenticated.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. No transaction was requested.`,
+      message: `${authenticated.network === "tron" ? "TRON" : "EVM"} session connected to ${authenticated.connectionTarget || CONNECTION_TARGET} until ${new Date(authenticated.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. No transaction was requested.`,
       address: authenticated.address,
     });
   }
@@ -780,6 +1015,7 @@ function setControlsDisabled(disabled) {
   ui.tronLink.disabled = disabled;
   ui.trust.disabled = disabled;
   ui.injected.disabled = disabled;
+  ui.walletConnect.disabled = disabled;
   ui.close.disabled = disabled;
 }
 

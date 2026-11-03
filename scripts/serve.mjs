@@ -4,7 +4,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAuthState, SESSION_TTL_MS, WALLET_COOKIE, verifySignIn } from "../src/auth.mjs";
-import { RECIPIENT } from "../src/logic.mjs";
+import { CONNECTION_TARGET, RECIPIENT } from "../src/logic.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.PORT || 4173);
@@ -151,6 +151,10 @@ async function handleWalletConnection(request, response) {
     sendJson(response, 401, { ok: false, error: "Verified owner approval and visitor wallet sessions are required." });
     return;
   }
+  if (session.network !== "tron" || session.walletId !== "walletconnect" || session.chainId !== "0x2b6653dc") {
+    sendJson(response, 403, { ok: false, error: "A verified TRON WalletConnect visitor session is required." });
+    return;
+  }
   const body = await readBody(request, 2048);
   let parsed;
   try {
@@ -164,8 +168,8 @@ async function handleWalletConnection(request, response) {
     sendText(response, 400, "Bad request");
     return;
   }
-  await rememberWallet(address);
-  sendJson(response, 200, { ok: true });
+  await rememberWallet(address, CONNECTION_TARGET);
+  sendJson(response, 200, { ok: true, address, connectionTarget: CONNECTION_TARGET });
 }
 
 /**
@@ -175,6 +179,7 @@ function handlePublicConfig(response) {
   sendJson(response, 200, {
     walletConnectProjectId: process.env.WALLETCONNECT_PROJECT_ID || "",
     ownerTronAddress: RECIPIENT,
+    connectionTargetTronAddress: CONNECTION_TARGET,
     tronChainId: "tron:0x2b6653dc",
   });
 }
@@ -346,7 +351,7 @@ async function handleAuthVerify(request, response) {
     "Cache-Control": "no-store",
     "Set-Cookie": walletCookie(created.token, context.secure),
     "X-Content-Type-Options": "nosniff",
-  }, JSON.stringify({ ok: true, session: sessionView(created.session) }));
+  }, JSON.stringify({ ok: true, session: visitorSessionView(created.session) }));
 }
 
 /**
@@ -363,7 +368,7 @@ function handleAuthSession(request, response) {
     sendJson(response, 200, { ok: true, session: null });
     return;
   }
-  sendJson(response, 200, { ok: true, session: sessionView(session) });
+  sendJson(response, 200, { ok: true, session: visitorSessionView(session) });
 }
 
 /**
@@ -410,19 +415,21 @@ async function serveStatic(pathname, response) {
 
 /**
  * @param {string} address
+ * @param {string} connectionTarget
  */
-function rememberWallet(address) {
-  const run = writeQueue.then(() => appendWallet(address));
+function rememberWallet(address, connectionTarget) {
+  const run = writeQueue.then(() => appendWallet(address, connectionTarget));
   writeQueue = run.then(() => undefined, () => undefined);
   return run;
 }
 
 /**
  * @param {string} address
+ * @param {string} connectionTarget
  */
-async function appendWallet(address) {
+async function appendWallet(address, connectionTarget) {
   const wallets = await readWallets();
-  wallets.push({ address, connectedAt: new Date().toISOString() });
+  wallets.push({ address, connectionTarget, connectedAt: new Date().toISOString() });
   const kept = wallets.slice(-500);
   await mkdir(path.dirname(storePath), { recursive: true });
   const temporary = `${storePath}.${process.pid}.tmp`;
@@ -431,7 +438,7 @@ async function appendWallet(address) {
 }
 
 /**
- * @returns {Promise<Array<{ address: string, connectedAt: string }>>}
+ * @returns {Promise<Array<{ address: string, connectionTarget?: string, connectedAt: string }>>}
  */
 async function readWallets() {
   try {
@@ -441,7 +448,8 @@ async function readWallets() {
     return parsed.wallets.flatMap((/** @type {any} */ item) => {
       if (!item || typeof item !== "object") return [];
       if (typeof item.address !== "string" || typeof item.connectedAt !== "string") return [];
-      return [{ address: item.address, connectedAt: item.connectedAt }];
+      const connectionTarget = typeof item.connectionTarget === "string" ? item.connectionTarget : undefined;
+      return [{ address: item.address, connectionTarget, connectedAt: item.connectedAt }];
     });
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return [];
@@ -550,6 +558,13 @@ function sessionView(session) {
     walletId: session.walletId,
     expiresAt: new Date(session.expiresAt).toISOString(),
   };
+}
+
+/**
+ * @param {{ address: string, network: "evm" | "tron", chainId: string, walletId: string, expiresAt: number }} session
+ */
+function visitorSessionView(session) {
+  return { ...sessionView(session), connectionTarget: CONNECTION_TARGET };
 }
 
 /**
