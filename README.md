@@ -1,4 +1,28 @@
-# TRON USDT payment page
+# Flash USDT Checker landing page
+
+The current home page is Page 1 of a Flash USDT checker experience. It provides a polished, responsive landing screen with a prominent **Start Flash USDT Check** option, explains the verification steps, and links directly to the official TRC-20 USDT contract on TRONSCAN.
+
+The wording deliberately avoids treating “Flash USDT” as an official token type. The page explains that a real check must verify a successful public transaction and match Tether’s official TRC-20 contract.
+
+The wallet flow supports MetaMask, Trust Wallet, TronLink, and EIP-6963/injected EVM providers. It creates a verified server session by asking the wallet to sign a short-lived, nonce-bound login message. The message is tied to this site, wallet, chain, and expiry; it is not a transaction and cannot move funds. The server consumes every nonce once and stores the session in an HTTP-only cookie. A valid session restores silently without another signature.
+
+The app never asks for a recovery phrase, private key, or wallet password. Account or network changes invalidate the old verified session. Manual disconnect clears the server session but does not revoke the wallet’s own connected-sites permission.
+
+Set the public WalletConnect Cloud project identifier in the server environment:
+
+```bash
+WALLETCONNECT_PROJECT_ID=your_real_project_id npm start
+```
+
+The app does not contain or invent a project ID. Choosing **WalletConnect** displays a QR code and mobile `wc:` link. The wallet approves the pairing and signs a nonce-bound login message. The message is not a transaction and cannot move funds. After the server verifies that signature, it records the verified public TRON wallet as connected to `TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9`. WalletConnect pairs the wallet with the DApp—it cannot create a wallet-to-wallet connection—so this target is an explicit server-side association, not a transaction or token transfer.
+
+MetaMask, Trust Wallet, and TronLink follow the same sign-in pattern after account approval. Verified TRON mainnet sessions receive the same connection target association and show read-only TRX and USDT balances from public TRON network data on the linked wallet view.
+
+Run `npm start` and open `http://127.0.0.1:4173` to preview it. Run `npm run check` for syntax, type, unit, safety, and build checks. The authentication API runs in the Node preview server; production deployment therefore needs the same server process, HTTPS, `WALLETCONNECT_PROJECT_ID`, and (when behind a proxy) an optional `PUBLIC_ORIGIN=https://your-host` to allow that hostname in addition to local preview and tunnel hosts (`*.trycloudflare.com`, `*.loca.lt`). Sign-in messages are always bound to the browser `Origin` header that loaded the page.
+
+## Legacy payment implementation
+
+The repository also retains the earlier wallet payment implementation in `src/app.js` and `src/logic.mjs` for reference and its existing automated tests. The new landing page does not load or execute that JavaScript.
 
 This is a one-page website that prepares one USDT (TRC-20) transfer on TRON mainnet and asks TronLink to sign it. The page has the transfer desk, a short explanation of the steps, and a safety section. The recipient is fixed. Opening the page, or scanning a QR code that points at the page, does not connect a wallet and does not send funds.
 

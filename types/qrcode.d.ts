@@ -8,6 +8,7 @@ declare module "qrcode" {
   }
 
   export function toFile(path: string, text: string, options?: QrFileOptions): Promise<void>;
+  export function toDataURL(text: string, options?: QrFileOptions): Promise<string>;
   export function toString(text: string, options?: QrFileOptions): Promise<string>;
   export function create(
     text: string | Array<{ data: string; mode?: string }>,

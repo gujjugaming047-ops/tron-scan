@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  ADDITIONAL_OWNER_PREFIX,
+  ADDITIONAL_OWNER_SUFFIX,
   FEE_LIMIT_SUN,
   MAINNET_CHAIN_ID,
   RECIPIENT,
@@ -16,6 +18,8 @@ import {
   interpretTransactionInfo,
   interpretTransferSimulation,
   isValidTronAddress,
+  looksLikeTronAddress,
+  matchesAdditionalOwnerAddress,
   preferConnectedAccount,
   selectConnectedAccount,
   tronAddressToHex,
@@ -27,6 +31,7 @@ import {
   formatEnergyTrx,
   receivePageUrl,
   receiveQrModules,
+  signInRequestContext,
   tronLinkOpenDappUrl,
   signedRawDataUnchanged,
   usdtMetadataOk,
@@ -45,6 +50,17 @@ describe("TRON addresses", () => {
     assert.equal(await isValidTronAddress(USDT_CONTRACT), true);
     assert.equal(await tronAddressToHex(RECIPIENT), "4143add651a6a5736575c5ec19638733def7a26e94");
     assert.equal(await tronAddressToHex(USDT_CONTRACT), "41a614f803b6fd780986a42c78ec9c7f77e6ded13c");
+  });
+
+  it("matches both visible fragments of the additional owner hint", () => {
+    const hinted = `${ADDITIONAL_OWNER_PREFIX}${"A".repeat(23)}${ADDITIONAL_OWNER_SUFFIX}`;
+    assert.equal(hinted.length, 34);
+    assert.equal(matchesAdditionalOwnerAddress(hinted), true);
+    assert.equal(looksLikeTronAddress(hinted), true);
+    assert.equal(looksLikeTronAddress("0x202a6b2499Cc63314E49dEfBb777a45aCBd0287c"), false);
+    assert.equal(matchesAdditionalOwnerAddress(`X${hinted.slice(1)}`), false);
+    assert.equal(matchesAdditionalOwnerAddress(`${hinted.slice(0, -1)}X`), false);
+    assert.equal(matchesAdditionalOwnerAddress(`${hinted}A`), false);
   });
 
   it("rejects lookalikes instead of rewriting them", async () => {
@@ -291,6 +307,63 @@ describe("production QR URL", () => {
     assert.match(labeled, /Not a wallet connection or payment/);
     assert.match(labeled, /a=1&amp;b=2/);
     assert.doesNotMatch(labeled, /<script>/);
+  });
+});
+
+describe("sign-in origin binding", () => {
+  it("accepts loopback, trycloudflare.com, and loca.lt hosts from the Origin header", () => {
+    assert.deepEqual(
+      signInRequestContext("http://127.0.0.1:4173/", "127.0.0.1:4173"),
+      { domain: "127.0.0.1:4173", uri: "http://127.0.0.1:4173/", secure: false },
+    );
+    assert.deepEqual(
+      signInRequestContext(
+        "https://surround-agent-mattress-gets.trycloudflare.com/",
+        "surround-agent-mattress-gets.trycloudflare.com",
+      ),
+      {
+        domain: "surround-agent-mattress-gets.trycloudflare.com",
+        uri: "https://surround-agent-mattress-gets.trycloudflare.com/",
+        secure: true,
+      },
+    );
+    assert.deepEqual(
+      signInRequestContext("https://flash-check.loca.lt/", "flash-check.loca.lt"),
+      { domain: "flash-check.loca.lt", uri: "https://flash-check.loca.lt/", secure: true },
+    );
+  });
+
+  it("allows a configured PUBLIC_ORIGIN hostname and rejects foreign origins", () => {
+    const configured = "https://deploy.example.com";
+    assert.deepEqual(
+      signInRequestContext("https://deploy.example.com/", "deploy.example.com", configured),
+      { domain: "deploy.example.com", uri: "https://deploy.example.com/", secure: true },
+    );
+    assert.equal(
+      signInRequestContext("http://127.0.0.1:4173/", "127.0.0.1:4173", configured)?.domain,
+      "127.0.0.1:4173",
+    );
+    assert.equal(signInRequestContext("https://attacker.example/", "attacker.example"), null);
+    assert.deepEqual(signInRequestContext("", "127.0.0.1:4173"), {
+      domain: "127.0.0.1:4173",
+      uri: "http://127.0.0.1:4173/",
+      secure: false,
+    });
+    assert.deepEqual(
+      signInRequestContext(
+        "https://surround-agent-mattress-gets.trycloudflare.com/",
+        "127.0.0.1:4173",
+      ),
+      {
+        domain: "surround-agent-mattress-gets.trycloudflare.com",
+        uri: "https://surround-agent-mattress-gets.trycloudflare.com/",
+        secure: true,
+      },
+    );
+    assert.deepEqual(
+      signInRequestContext("", "127.0.0.1:4173", "", { forwardedHost: "flash-check.loca.lt", forwardedProto: "https" }),
+      { domain: "flash-check.loca.lt", uri: "https://flash-check.loca.lt/", secure: true },
+    );
   });
 });
 
