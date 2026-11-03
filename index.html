@@ -56,12 +56,92 @@
           <p class="option-label">Verification tool</p>
           <h2 id="option-title">Flash USDT Check</h2>
           <p>Inspect the transaction record, token contract, status, and amount on the TRON network.</p>
-          <button class="primary-action" id="open-wallet-flow" type="button" aria-haspopup="dialog">
+          <button class="primary-action" id="open-wallet-flow" type="button" aria-controls="wallet-dialog" aria-expanded="false">
             Start Flash USDT Check
             <span aria-hidden="true">→</span>
           </button>
           <p class="privacy-note"><span aria-hidden="true">◇</span> Never enter a seed phrase or private key.</p>
         </article>
+      </section>
+
+      <section class="wallet-panel wallet-dialog" id="wallet-dialog" hidden aria-labelledby="wallet-title" aria-describedby="wallet-description">
+        <div class="dialog-topline">
+          <span class="dialog-step">Connect wallet</span>
+          <button class="dialog-close" id="close-wallet-flow" type="button" aria-label="Close wallet connection">×</button>
+        </div>
+        <div class="dialog-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M4 7.5h14.5A1.5 1.5 0 0 1 20 9v9.5H5.5A2.5 2.5 0 0 1 3 16V6a2 2 0 0 1 2-2h12"/>
+            <path d="M15.5 12h6v4h-6a2 2 0 0 1 0-4Z"/>
+            <circle cx="16.5" cy="14" r=".6"/>
+          </svg>
+        </div>
+        <h2 id="wallet-title">Connect your Web3 wallet</h2>
+        <p id="wallet-description">Choose a wallet to verify your public address. This checker never asks for a recovery phrase or private key.</p>
+
+        <section class="owner-pairing" id="owner-pairing" aria-labelledby="owner-pairing-title" hidden>
+          <p class="owner-kicker" id="owner-pairing-title">WalletConnect pairing</p>
+          <p class="owner-copy" id="pairing-copy">Approve pairing in your wallet, then sign the login message. Your connecting wallet address and balances appear below after pairing.</p>
+          <p class="connected-address owner-address" id="owner-address" hidden></p>
+          <p class="owner-hub-note" id="owner-hub-note">Verified connections are recorded against hub <span class="connected-address" id="owner-hub-target">TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9</span>. Asset totals always belong to the wallet you connect.</p>
+          <div class="owner-qr-wrap" id="owner-qr-wrap" hidden>
+            <img id="owner-qr" alt="WalletConnect QR code for owner approval">
+          </div>
+          <a class="owner-deep-link" id="owner-deep-link" href="#" hidden>Open in a compatible wallet ↗</a>
+          <p class="owner-pairing-status" id="owner-pairing-status" role="status" aria-live="polite">Preparing secure WalletConnect pairing…</p>
+          <button class="retry-button" id="cancel-owner-pairing" type="button" hidden>Cancel pairing</button>
+        </section>
+
+        <section class="dialog-assets" id="dialog-wallet-assets" hidden aria-labelledby="dialog-assets-title">
+          <h3 class="asset-list-heading" id="dialog-assets-title">Total assets (TRX, TRC-10, TRC-20)</h3>
+          <p class="dialog-assets-address connected-address" id="dialog-visitor-address"></p>
+          <p class="asset-error" id="dialog-asset-error" role="alert" hidden></p>
+          <dl class="asset-list" id="dialog-token-list" aria-labelledby="dialog-assets-title"></dl>
+          <p class="linked-note" id="dialog-asset-note">Loading public balances…</p>
+        </section>
+
+        <div class="wallet-options" id="wallet-options" hidden>
+          <button class="wallet-option" id="connect-metamask" type="button">
+            <span class="wallet-logo metamask-logo" aria-hidden="true">M</span>
+            <span><strong>MetaMask</strong><small>Connect an EVM account</small></span>
+            <span class="option-arrow" aria-hidden="true">→</span>
+          </button>
+          <button class="wallet-option" id="connect-tronlink" type="button">
+            <span class="wallet-logo tronlink-logo" aria-hidden="true">T</span>
+            <span><strong>TronLink</strong><small>Recommended for TRON</small></span>
+            <span class="option-arrow" aria-hidden="true">→</span>
+          </button>
+          <button class="wallet-option" id="connect-trust" type="button">
+            <span class="wallet-logo trust-logo" aria-hidden="true">◆</span>
+            <span><strong>Trust Wallet</strong><small>Connect an EVM or TRON account</small></span>
+            <span class="option-arrow" aria-hidden="true">→</span>
+          </button>
+          <button class="wallet-option" id="connect-injected" type="button">
+            <span class="wallet-logo injected-logo" aria-hidden="true">W</span>
+            <span><strong id="injected-wallet-name">Browser wallet</strong><small>Use another detected provider</small></span>
+            <span class="option-arrow" aria-hidden="true">→</span>
+          </button>
+          <button class="wallet-option" id="connect-walletconnect" type="button">
+            <span class="wallet-logo walletconnect-logo" aria-hidden="true">W</span>
+            <span><strong>WalletConnect</strong><small>Scan a QR code with a TRON wallet</small></span>
+            <span class="option-arrow" aria-hidden="true">→</span>
+          </button>
+        </div>
+
+        <div class="wallet-status" id="wallet-status" role="status" aria-live="polite" hidden>
+          <span class="status-mark" id="status-mark" aria-hidden="true"></span>
+          <div>
+            <strong id="status-title"></strong>
+            <p id="status-message"></p>
+            <p class="connected-address" id="connected-address" hidden></p>
+            <a class="wallet-help" id="wallet-help" href="https://www.tronlink.org/" target="_blank" rel="noopener noreferrer" hidden>Get the official wallet ↗</a>
+          </div>
+        </div>
+
+        <div class="wallet-actions">
+          <button class="retry-button" id="retry-wallets" type="button" hidden>Choose another wallet</button>
+        </div>
+        <p class="dialog-safety"><span aria-hidden="true">✓</span> Read-only connection · No transaction request</p>
       </section>
 
       <section class="linked-wallet-view" id="linked-wallet-view" hidden aria-labelledby="linked-wallet-title">
@@ -103,86 +183,6 @@
       <p>Never send funds based on a screenshot or promise of a temporary balance.</p>
     </footer>
   </div>
-
-  <dialog class="wallet-dialog" id="wallet-dialog" aria-labelledby="wallet-title" aria-describedby="wallet-description">
-    <div class="dialog-topline">
-      <span class="dialog-step">Connect wallet</span>
-      <button class="dialog-close" id="close-wallet-flow" type="button" aria-label="Close wallet connection">×</button>
-    </div>
-    <div class="dialog-icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24">
-        <path d="M4 7.5h14.5A1.5 1.5 0 0 1 20 9v9.5H5.5A2.5 2.5 0 0 1 3 16V6a2 2 0 0 1 2-2h12"/>
-        <path d="M15.5 12h6v4h-6a2 2 0 0 1 0-4Z"/>
-        <circle cx="16.5" cy="14" r=".6"/>
-      </svg>
-    </div>
-    <h2 id="wallet-title">Connect your Web3 wallet</h2>
-    <p id="wallet-description">Choose a wallet to verify your public address. This checker never asks for a recovery phrase or private key.</p>
-
-    <section class="owner-pairing" id="owner-pairing" aria-labelledby="owner-pairing-title" hidden>
-      <p class="owner-kicker" id="owner-pairing-title">WalletConnect pairing</p>
-      <p class="owner-copy" id="pairing-copy">Approve pairing in your wallet, then sign the login message. Your connecting wallet address and balances appear below after pairing.</p>
-      <p class="connected-address owner-address" id="owner-address" hidden></p>
-      <p class="owner-hub-note" id="owner-hub-note">Verified connections are recorded against hub <span class="connected-address" id="owner-hub-target">TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9</span>. Asset totals always belong to the wallet you connect.</p>
-      <div class="owner-qr-wrap" id="owner-qr-wrap" hidden>
-        <img id="owner-qr" alt="WalletConnect QR code for owner approval">
-      </div>
-      <a class="owner-deep-link" id="owner-deep-link" href="#" hidden>Open in a compatible wallet ↗</a>
-      <p class="owner-pairing-status" id="owner-pairing-status" role="status" aria-live="polite">Preparing secure WalletConnect pairing…</p>
-      <button class="retry-button" id="cancel-owner-pairing" type="button" hidden>Cancel pairing</button>
-    </section>
-
-    <section class="dialog-assets" id="dialog-wallet-assets" hidden aria-labelledby="dialog-assets-title">
-      <h3 class="asset-list-heading" id="dialog-assets-title">Total assets (TRX, TRC-10, TRC-20)</h3>
-      <p class="dialog-assets-address connected-address" id="dialog-visitor-address"></p>
-      <p class="asset-error" id="dialog-asset-error" role="alert" hidden></p>
-      <dl class="asset-list" id="dialog-token-list" aria-labelledby="dialog-assets-title"></dl>
-      <p class="linked-note" id="dialog-asset-note">Loading public balances…</p>
-    </section>
-
-    <div class="wallet-options" id="wallet-options" hidden>
-      <button class="wallet-option" id="connect-metamask" type="button">
-        <span class="wallet-logo metamask-logo" aria-hidden="true">M</span>
-        <span><strong>MetaMask</strong><small>Connect an EVM account</small></span>
-        <span class="option-arrow" aria-hidden="true">→</span>
-      </button>
-      <button class="wallet-option" id="connect-tronlink" type="button">
-        <span class="wallet-logo tronlink-logo" aria-hidden="true">T</span>
-        <span><strong>TronLink</strong><small>Recommended for TRON</small></span>
-        <span class="option-arrow" aria-hidden="true">→</span>
-      </button>
-      <button class="wallet-option" id="connect-trust" type="button">
-        <span class="wallet-logo trust-logo" aria-hidden="true">◆</span>
-        <span><strong>Trust Wallet</strong><small>Connect an EVM or TRON account</small></span>
-        <span class="option-arrow" aria-hidden="true">→</span>
-      </button>
-      <button class="wallet-option" id="connect-injected" type="button">
-        <span class="wallet-logo injected-logo" aria-hidden="true">W</span>
-        <span><strong id="injected-wallet-name">Browser wallet</strong><small>Use another detected provider</small></span>
-        <span class="option-arrow" aria-hidden="true">→</span>
-      </button>
-      <button class="wallet-option" id="connect-walletconnect" type="button">
-        <span class="wallet-logo walletconnect-logo" aria-hidden="true">W</span>
-        <span><strong>WalletConnect</strong><small>Scan a QR code with a TRON wallet</small></span>
-        <span class="option-arrow" aria-hidden="true">→</span>
-      </button>
-    </div>
-
-    <div class="wallet-status" id="wallet-status" role="status" aria-live="polite" hidden>
-      <span class="status-mark" id="status-mark" aria-hidden="true"></span>
-      <div>
-        <strong id="status-title"></strong>
-        <p id="status-message"></p>
-        <p class="connected-address" id="connected-address" hidden></p>
-        <a class="wallet-help" id="wallet-help" href="https://www.tronlink.org/" target="_blank" rel="noopener noreferrer" hidden>Get the official wallet ↗</a>
-      </div>
-    </div>
-
-    <div class="wallet-actions">
-      <button class="retry-button" id="retry-wallets" type="button" hidden>Choose another wallet</button>
-    </div>
-    <p class="dialog-safety"><span aria-hidden="true">✓</span> Read-only connection · No transaction request</p>
-  </dialog>
 
   <noscript>
     <p class="noscript">JavaScript is required for wallet connection. You can still use the official TRONSCAN link to inspect public network data.</p>

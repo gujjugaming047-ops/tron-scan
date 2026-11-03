@@ -544,10 +544,14 @@ footer span { color: var(--accent); }
   text-align: center;
 }
 
+.wallet-panel.wallet-dialog {
+  width: 100%;
+  max-height: none;
+  margin: 0 0 36px;
+  overflow: visible;
+}
+
 .wallet-dialog {
-  width: min(92vw, 470px);
-  max-height: min(90vh, 720px);
-  margin: auto;
   padding: 0;
   overflow: auto;
   border: 1px solid rgba(66, 245, 141, 0.24);
@@ -555,11 +559,6 @@ footer span { color: var(--accent); }
   color: var(--text);
   background: linear-gradient(145deg, #111c18, #080e0c);
   box-shadow: 0 35px 110px rgba(0, 0, 0, 0.7);
-}
-
-.wallet-dialog::backdrop {
-  background: rgba(1, 5, 3, 0.78);
-  backdrop-filter: blur(8px);
 }
 
 .dialog-topline {

@@ -35,7 +35,7 @@ import { normalizeEvmWalletAssetTokens } from "./evm-public.mjs";
  */
 
 const ui = {
-  dialog: requiredDialog("wallet-dialog"),
+  walletPanel: requiredElement("wallet-dialog"),
   open: requiredButton("open-wallet-flow"),
   close: requiredButton("close-wallet-flow"),
   metaMask: requiredButton("connect-metamask"),
@@ -127,11 +127,8 @@ window.addEventListener("tronLink#initialized", () => {
 ui.open.addEventListener("click", () => {
   void openConnectionFlow();
 });
-ui.close.addEventListener("click", () => ui.dialog.close());
+ui.close.addEventListener("click", () => closeWalletPanel());
 ui.retry.addEventListener("click", showOptions);
-ui.dialog.addEventListener("click", (event) => {
-  if (event.target === ui.dialog) ui.dialog.close();
-});
 ui.metaMask.addEventListener("click", () => void connectSelected("metamask"));
 ui.tronLink.addEventListener("click", () => void connectSelected("tronlink"));
 ui.trust.addEventListener("click", () => void connectSelected("trust"));
@@ -231,22 +228,29 @@ async function initializeSessions() {
 }
 
 async function openConnectionFlow() {
+  openWalletPanel();
   if (connected && session) {
-    await loadVerifiedWalletAssets(session, { scrollIntoView: true });
-    return;
+    await loadVerifiedWalletAssets(session, { scrollIntoView: false });
   }
-  openWalletChooserDialog();
   if (deferredState) showState(deferredState);
   else showOptions();
+  ui.walletPanel.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function openWalletChooserDialog() {
-  if (ui.dialog.open) return;
-  try {
-    ui.dialog.showModal();
-  } catch {
-    // Dialog is already open; leave the wallet chooser visible.
-  }
+function openWalletPanel() {
+  ui.walletPanel.hidden = false;
+  ui.walletPanel.removeAttribute("hidden");
+  ui.open.setAttribute("aria-expanded", "true");
+}
+
+function closeWalletPanel() {
+  ui.walletPanel.hidden = true;
+  ui.walletPanel.setAttribute("hidden", "");
+  ui.open.setAttribute("aria-expanded", "false");
+}
+
+function isWalletPanelOpen() {
+  return !ui.walletPanel.hidden;
 }
 
 /**
@@ -703,7 +707,7 @@ async function handleWalletChange(message) {
   const chainId = address ? await readChainId(activeWallet, address) : "";
   if (address && sameWalletAddress(address, session.address) && chainId === session.chainId) return;
   await disconnectSession(`${message} Connect again to verify the new account and network.`);
-  if (ui.dialog.open) showState({ kind: "error", title: "Wallet selection changed", message: `${message} Sign in again to continue.` });
+  if (isWalletPanelOpen()) showState({ kind: "error", title: "Wallet selection changed", message: `${message} Sign in again to continue.` });
 }
 
 /**
@@ -737,7 +741,7 @@ function showConnected(authenticated, options = {}) {
   arrow.textContent = "→";
   ui.open.append(arrow);
   void loadVerifiedWalletAssets(authenticated, options).finally(() => {
-    if (ui.dialog.open) ui.dialog.close();
+    if (isWalletPanelOpen()) closeWalletPanel();
   });
 }
 
@@ -1028,7 +1032,7 @@ function showState(next) {
  */
 function rememberState(next) {
   deferredState = next;
-  if (ui.dialog.open) showState(next);
+  if (isWalletPanelOpen()) showState(next);
 }
 
 /**
@@ -1186,14 +1190,5 @@ function requiredAnchor(id) {
 function requiredImage(id) {
   const element = requiredElement(id);
   if (!(element instanceof HTMLImageElement)) throw new Error(`Expected image ${id}.`);
-  return element;
-}
-
-/**
- * @param {string} id
- */
-function requiredDialog(id) {
-  const element = requiredElement(id);
-  if (!(element instanceof HTMLDialogElement)) throw new Error(`Expected dialog ${id}.`);
   return element;
 }

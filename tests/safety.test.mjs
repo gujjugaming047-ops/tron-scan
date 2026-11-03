@@ -45,8 +45,11 @@ describe("source safety", () => {
     assert.match(landing, /\/api\/auth\/session/);
     assert.match(landing, /\/api\/public\/wallet-assets\?address=/);
     assert.match(landing, /\/api\/public\/evm-wallet-assets\?/);
-    assert.match(landing, /loadVerifiedWalletAssets\(session, \{ scrollIntoView: true \}\)/);
-    assert.equal(html.includes("Continue without connecting"), false);
+    assert.match(landing, /loadVerifiedWalletAssets\(session, \{ scrollIntoView: false \}\)/);
+    assert.equal(html.includes("<dialog"), false);
+    assert.match(html, /class="wallet-panel wallet-dialog"/);
+    assert.equal(landing.includes("showModal"), false);
+    assert.match(landing, /openWalletPanel\(\)/);
     assert.equal(html.includes("balance-tools"), false);
     assert.match(html, /id="dialog-wallet-assets"/);
     assert.match(html, /id="linked-assets-heading"/);
