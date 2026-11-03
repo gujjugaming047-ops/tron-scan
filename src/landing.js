@@ -2,9 +2,11 @@ import {
   evaluateSessionRestore,
   firstEvmAddress,
   identifyEvmProvider,
+  resolveSignInNetwork,
   sameWalletAddress,
   selectWalletProvider,
   shortenWalletAddress,
+  waitForTronWeb,
   walletHelpLink,
 } from "./wallet-state.mjs";
 import {
@@ -441,7 +443,9 @@ async function restoreSession() {
     return;
   }
   const current = await readAuthorizedAccount(wallet);
-  const currentChain = current ? await readChainId(wallet) : "";
+  const { chainId: currentChain } = current
+    ? await resolveSignInNetwork(wallet, current, wallet.provider)
+    : { chainId: "" };
   const restoreState = evaluateSessionRestore(restored, wallet, current, currentChain);
   if (restoreState === "locked") {
     activeWallet = wallet;
@@ -489,17 +493,22 @@ async function connectSelected(walletId) {
   try {
     const address = await requestAccount(wallet);
     if (!address) throw new Error("The wallet did not return an account.");
-    const chainId = await readChainId(wallet);
-    if (!chainId) throw new Error(wallet.network === "tron" ? "Switch the wallet to TRON mainnet and try again." : "The wallet network could not be read.");
+    const { network, chainId } = await resolveSignInNetwork(wallet, address, wallet.provider);
+    if (!chainId) {
+      throw new Error(network === "tron" || wallet.network === "tron"
+        ? "Switch the wallet to TRON mainnet and try again."
+        : "The wallet network could not be read.");
+    }
 
     const existing = await fetchJson("/api/auth/session");
     if (existing.ok && existing.body?.session
       && sameWalletAddress(existing.body.session.address, address)
       && existing.body.session.chainId === chainId
+      && existing.body.session.network === network
       && existing.body.session.walletId === wallet.id) {
       session = existing.body.session;
     } else {
-      session = await authenticate(wallet, address, chainId);
+      session = await authenticate(wallet, address, chainId, network);
     }
     const authenticated = session;
     if (!authenticated) throw new Error("The verified session could not be restored.");
@@ -525,8 +534,9 @@ async function connectSelected(walletId) {
  * @param {WalletDescriptor} wallet
  * @param {string} address
  * @param {string} chainId
+ * @param {"evm" | "tron"} [network]
  */
-async function authenticate(wallet, address, chainId) {
+async function authenticate(wallet, address, chainId, network = wallet.network) {
   const nonceResponse = await fetchJson("/api/auth/nonce");
   if (!nonceResponse.ok) throw new Error(nonceResponse.body?.error || "Could not start secure sign-in.");
   const now = new Date();
@@ -536,7 +546,7 @@ async function authenticate(wallet, address, chainId) {
     domain: nonceResponse.body.domain,
     address,
     uri: nonceResponse.body.uri,
-    network: wallet.network,
+    network,
     walletId: wallet.id,
     chainId,
     nonce: nonceResponse.body.nonce,
@@ -548,7 +558,7 @@ async function authenticate(wallet, address, chainId) {
     title: "Verify this sign-in",
     message: "Sign the login message in your wallet. This is not a transaction and cannot move funds.",
   });
-  const signature = await signLoginMessage(wallet, address, message);
+  const signature = await signLoginMessage(wallet, address, message, network);
   const verified = await fetchJson("/api/auth/verify", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -569,7 +579,7 @@ async function authenticate(wallet, address, chainId) {
 async function requestAccount(wallet) {
   if (wallet.network === "evm") {
     const accounts = await wallet.provider.request({ method: "eth_requestAccounts" });
-    return firstEvmAddress(accounts);
+    return firstEvmAddress(accounts) || findTronAddress(wallet.provider, accounts);
   }
   const method = wallet.id === "trust" ? "tron_requestAccounts" : "eth_requestAccounts";
   const result = await wallet.provider.request({ method });
@@ -583,7 +593,7 @@ async function readAuthorizedAccount(wallet) {
   try {
     if (wallet.network === "evm") {
       const accounts = await wallet.provider.request({ method: "eth_accounts" });
-      return firstEvmAddress(accounts);
+      return firstEvmAddress(accounts) || findTronAddress(wallet.provider, accounts);
     }
     return findTronAddress(wallet.provider, null);
   } catch {
@@ -593,32 +603,29 @@ async function readAuthorizedAccount(wallet) {
 
 /**
  * @param {WalletDescriptor} wallet
+ * @param {string} address
  */
-async function readChainId(wallet) {
-  if (wallet.network === "evm") {
-    const chainId = await wallet.provider.request({ method: "eth_chainId" });
-    if (typeof chainId !== "string" || !/^0x[0-9a-f]+$/i.test(chainId)) return "";
-    return BigInt(chainId).toString(10);
-  }
-  const tronWeb = wallet.provider.tronWeb;
-  if (!tronWeb?.trx || typeof tronWeb.trx.getBlockByNumber !== "function") return "";
-  const genesis = await tronWeb.trx.getBlockByNumber(0);
-  const blockId = typeof genesis?.blockID === "string" ? genesis.blockID.toLowerCase() : "";
-  return blockId.endsWith("2b6653dc") ? "0x2b6653dc" : "";
+async function readChainId(wallet, address) {
+  const resolved = await resolveSignInNetwork(wallet, address, wallet.provider);
+  return resolved.chainId;
 }
 
 /**
  * @param {WalletDescriptor} wallet
  * @param {string} address
  * @param {string} message
+ * @param {"evm" | "tron"} [network]
  */
-async function signLoginMessage(wallet, address, message) {
-  if (wallet.network === "evm") {
+async function signLoginMessage(wallet, address, message, network = wallet.network) {
+  if (network === "evm") {
     return wallet.provider.request({ method: "personal_sign", params: [message, address] });
   }
-  const sign = wallet.provider.tronWeb?.trx?.signMessageV2;
+  const tronWeb = await waitForTronWeb(wallet.provider, { requiredAddress: address, maxAttempts: 20 });
+  const sign = tronWeb && typeof tronWeb === "object"
+    ? /** @type {{ trx?: { signMessageV2?: (msg: string) => Promise<string> } }} */ (tronWeb).trx?.signMessageV2
+    : undefined;
   if (typeof sign !== "function") throw new Error("This TRON wallet cannot sign a login message.");
-  return sign.call(wallet.provider.tronWeb.trx, message);
+  return sign.call(/** @type {{ trx: { signMessageV2: (msg: string) => Promise<string> } }} */ (tronWeb).trx, message);
 }
 
 /**
@@ -638,7 +645,7 @@ function bindWalletEvents(wallet) {
 async function handleWalletChange(message) {
   if (!activeWallet || !session) return;
   const address = await readAuthorizedAccount(activeWallet);
-  const chainId = address ? await readChainId(activeWallet) : "";
+  const chainId = address ? await readChainId(activeWallet, address) : "";
   if (address && sameWalletAddress(address, session.address) && chainId === session.chainId) return;
   await disconnectSession(`${message} Connect again to verify the new account and network.`);
   if (ui.dialog.open) showState({ kind: "error", title: "Wallet selection changed", message: `${message} Sign in again to continue.` });

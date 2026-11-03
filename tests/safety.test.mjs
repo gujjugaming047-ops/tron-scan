@@ -40,7 +40,7 @@ describe("source safety", () => {
     assert.equal(landing.match(/eth_requestAccounts/g)?.length, 2);
     assert.equal(landing.match(/tron_requestAccounts/g)?.length, 1);
     assert.equal(landing.match(/personal_sign/g)?.length, 1);
-    assert.equal(landing.match(/signMessageV2/g)?.length, 1);
+    assert.equal(landing.match(/signMessageV2/g)?.length, 3);
     assert.equal(/triggerSmartContract|sendRawTransaction|\.sign\(/.test(landing), false);
     assert.match(landing, /\/api\/auth\/session/);
     assert.match(landing, /accountsChanged/);

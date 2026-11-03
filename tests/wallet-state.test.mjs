@@ -4,6 +4,8 @@ import {
   evaluateSessionRestore,
   firstEvmAddress,
   identifyEvmProvider,
+  normalizeEvmChainId,
+  resolveSignInNetwork,
   sameWalletAddress,
   selectWalletProvider,
   shortenWalletAddress,
@@ -87,5 +89,50 @@ describe("wallet session state", () => {
     assert.equal(tronAddressFromWalletConnectSession({
       namespaces: { tron: { accounts: ["tron:0x2b6653dc:invalid"] } },
     }), "");
+  });
+});
+
+describe("wallet chain resolution", () => {
+  const mainnetGenesis = `${"0".repeat(56)}2b6653dc`;
+
+  it("normalizes EVM chain ids returned as hex strings or numbers", () => {
+    assert.equal(normalizeEvmChainId("0x1"), "1");
+    assert.equal(normalizeEvmChainId(56), "56");
+    assert.equal(normalizeEvmChainId("137"), "137");
+    assert.equal(normalizeEvmChainId(""), "");
+  });
+
+  it("reads TRON mainnet from genesis when eth_chainId is unavailable", async () => {
+    const tronAddress = "TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9";
+    const provider = {
+      request: async () => {
+        throw new Error("eth_chainId unsupported");
+      },
+      tronWeb: {
+        defaultAddress: { base58: tronAddress },
+        trx: {
+          getBlockByNumber: async () => ({ blockID: mainnetGenesis }),
+        },
+      },
+    };
+    const resolved = await resolveSignInNetwork({ network: "evm" }, tronAddress, provider);
+    assert.equal(resolved.network, "tron");
+    assert.equal(resolved.chainId, "0x2b6653dc");
+  });
+
+  it("reads decimal EVM chain ids from eth_chainId", async () => {
+    const provider = {
+      request: async (/** @type {{ method: string }} */ args) => {
+        if (args.method === "eth_chainId") return 1;
+        return [];
+      },
+    };
+    const resolved = await resolveSignInNetwork(
+      { network: "evm" },
+      "0x1111111111111111111111111111111111111111",
+      provider,
+    );
+    assert.equal(resolved.network, "evm");
+    assert.equal(resolved.chainId, "1");
   });
 });
