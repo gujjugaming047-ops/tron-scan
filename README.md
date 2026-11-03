@@ -2,9 +2,13 @@
 
 The current home page is Page 1 of a Flash USDT checker experience. It provides a polished, responsive landing screen with a prominent **Start Flash USDT Check** option, explains the verification steps, and links directly to the official TRC-20 USDT contract on TRONSCAN.
 
-The wording deliberately avoids treating “Flash USDT” as an official token type. The page explains that a real check must verify a successful public transaction and match Tether’s official TRC-20 contract. Its optional TronLink and Trust Wallet flow requests only the connected public TRON address; it never asks for a signature, transaction, seed phrase, or private key.
+The wording deliberately avoids treating “Flash USDT” as an official token type. The page explains that a real check must verify a successful public transaction and match Tether’s official TRC-20 contract.
 
-Run `npm start` and open `http://127.0.0.1:4173` to preview it. Run `npm run check` for syntax, type, unit, safety, and build checks.
+The wallet flow supports MetaMask, Trust Wallet, TronLink, and EIP-6963/injected EVM providers. It creates a verified server session by asking the wallet to sign a short-lived, nonce-bound login message. The message is tied to this site, wallet, chain, and expiry; it is not a transaction and cannot move funds. The server consumes every nonce once and stores the session in an HTTP-only cookie. A valid session restores silently without another signature.
+
+The app never asks for a recovery phrase, private key, or wallet password. Account or network changes invalidate the old verified session. Manual disconnect clears the server session but does not revoke the wallet’s own connected-sites permission.
+
+Run `npm start` and open `http://127.0.0.1:4173` to preview it. Run `npm run check` for syntax, type, unit, safety, and build checks. The authentication API runs in the Node preview server; production deployment therefore needs the same server process, HTTPS, and (when behind a proxy) `PUBLIC_ORIGIN=https://your-host` so signed messages are pinned to the deployed origin.
 
 ## Legacy payment implementation
 

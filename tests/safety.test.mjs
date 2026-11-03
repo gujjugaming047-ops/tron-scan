@@ -8,7 +8,7 @@ const root = path.resolve(import.meta.dirname, "..");
 
 describe("source safety", () => {
   it("does not collect secrets or build a hidden token approval", () => {
-    const files = ["index.html", "src/app.js", "src/landing.js", "src/logic.mjs", "src/styles.css", "scripts/make-qr.mjs", "scripts/make-local-receive-qr.mjs"];
+    const files = ["index.html", "src/app.js", "src/auth.mjs", "src/landing.js", "src/logic.mjs", "src/styles.css", "scripts/make-qr.mjs", "scripts/make-local-receive-qr.mjs"];
     const forbidden = [
       /\.approve\s*\(/,
       /\btransferFrom\s*\(/,
@@ -35,9 +35,14 @@ describe("source safety", () => {
     assert.equal(app.match(/sendRawTransaction/g)?.length, 1);
     assert.equal(app.match(/\.sign\(/g)?.length, 1);
     assert.match(app, /receivePageUrl\(window\.location\.href\)/);
-    assert.equal(landing.match(/eth_requestAccounts/g)?.length, 1);
+    assert.equal(landing.match(/eth_requestAccounts/g)?.length, 2);
     assert.equal(landing.match(/tron_requestAccounts/g)?.length, 1);
+    assert.equal(landing.match(/personal_sign/g)?.length, 1);
+    assert.equal(landing.match(/signMessageV2/g)?.length, 1);
     assert.equal(/triggerSmartContract|sendRawTransaction|\.sign\(/.test(landing), false);
+    assert.match(landing, /\/api\/auth\/session/);
+    assert.match(landing, /accountsChanged/);
+    assert.match(landing, /chainChanged/);
     assert.match(html, /Flash USDT Check/);
     assert.match(html, /“Flash USDT” is not an official Tether token type/);
     assert.match(html, /Never enter a seed phrase or private key/);

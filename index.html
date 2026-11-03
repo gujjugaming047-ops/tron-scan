@@ -18,7 +18,14 @@
         </span>
         <span>Flash<span>Check</span></span>
       </a>
-      <div class="network-pill"><span aria-hidden="true"></span> TRON network</div>
+      <div class="header-controls">
+        <div class="connected-chip" id="connected-chip" hidden>
+          <span class="connected-dot" aria-hidden="true"></span>
+          <span id="header-address"></span>
+          <button id="disconnect-wallet" type="button">Disconnect</button>
+        </div>
+        <div class="network-pill"><span aria-hidden="true"></span> Web3 network</div>
+      </div>
     </header>
 
     <main>
@@ -92,10 +99,15 @@
         <circle cx="16.5" cy="14" r=".6"/>
       </svg>
     </div>
-    <h2 id="wallet-title">Connect your TRON wallet</h2>
-    <p id="wallet-description">Choose a wallet to share your public TRON address. This checker never asks for a signature, recovery phrase, or private key.</p>
+    <h2 id="wallet-title">Connect your Web3 wallet</h2>
+    <p id="wallet-description">Choose a wallet to verify your public address. This checker never asks for a recovery phrase or private key.</p>
 
     <div class="wallet-options" id="wallet-options">
+      <button class="wallet-option" id="connect-metamask" type="button">
+        <span class="wallet-logo metamask-logo" aria-hidden="true">M</span>
+        <span><strong>MetaMask</strong><small>Connect an EVM account</small></span>
+        <span class="option-arrow" aria-hidden="true">→</span>
+      </button>
       <button class="wallet-option" id="connect-tronlink" type="button">
         <span class="wallet-logo tronlink-logo" aria-hidden="true">T</span>
         <span><strong>TronLink</strong><small>Recommended for TRON</small></span>
@@ -103,7 +115,12 @@
       </button>
       <button class="wallet-option" id="connect-trust" type="button">
         <span class="wallet-logo trust-logo" aria-hidden="true">◆</span>
-        <span><strong>Trust Wallet</strong><small>Connect a TRON account</small></span>
+        <span><strong>Trust Wallet</strong><small>Connect an EVM or TRON account</small></span>
+        <span class="option-arrow" aria-hidden="true">→</span>
+      </button>
+      <button class="wallet-option" id="connect-injected" type="button">
+        <span class="wallet-logo injected-logo" aria-hidden="true">W</span>
+        <span><strong id="injected-wallet-name">Browser wallet</strong><small>Use another detected provider</small></span>
         <span class="option-arrow" aria-hidden="true">→</span>
       </button>
     </div>

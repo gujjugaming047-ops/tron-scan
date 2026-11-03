@@ -3,7 +3,7 @@ import { timingSafeEqual, randomBytes } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { isValidTronAddress } from "../src/logic.mjs";
+import { createAuthState, SESSION_TTL_MS, WALLET_COOKIE, verifySignIn } from "../src/auth.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.PORT || 4173);
@@ -12,7 +12,8 @@ const operatorId = process.env.OPERATOR_ID || "";
 const operatorPassword = process.env.OPERATOR_PASSWORD || "";
 const sessionCookie = "operator_session";
 /** @type {Set<string>} */
-const sessions = new Set();
+const operatorSessions = new Set();
+const walletAuth = createAuthState();
 let writeQueue = Promise.resolve();
 
 const allowed = new Map([
@@ -36,6 +37,22 @@ const server = createServer(async (request, response) => {
     }
     if (url.pathname === "/api/wallet-connections" && request.method === "POST") {
       await handleWalletConnection(request, response);
+      return;
+    }
+    if (url.pathname === "/api/auth/nonce" && request.method === "GET") {
+      handleAuthNonce(request, response);
+      return;
+    }
+    if (url.pathname === "/api/auth/verify" && request.method === "POST") {
+      await handleAuthVerify(request, response);
+      return;
+    }
+    if (url.pathname === "/api/auth/session" && request.method === "GET") {
+      handleAuthSession(request, response);
+      return;
+    }
+    if (url.pathname === "/api/auth/logout" && request.method === "POST") {
+      handleAuthLogout(request, response);
       return;
     }
     await serveStatic(url.pathname, response);
@@ -64,7 +81,7 @@ async function handleLogin(request, response) {
       return;
     }
     const token = randomBytes(32).toString("hex");
-    sessions.add(token);
+    operatorSessions.add(token);
     response.writeHead(303, {
       Location: "/login",
       "Set-Cookie": `${sessionCookie}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200`,
@@ -91,7 +108,7 @@ async function handleLogin(request, response) {
  */
 async function handleLogout(request, response) {
   const token = cookieValue(request, sessionCookie);
-  if (token) sessions.delete(token);
+  if (token) operatorSessions.delete(token);
   response.writeHead(303, {
     Location: "/login",
     "Set-Cookie": `${sessionCookie}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`,
@@ -105,6 +122,11 @@ async function handleLogout(request, response) {
  * @param {import("node:http").ServerResponse} response
  */
 async function handleWalletConnection(request, response) {
+  const session = readWalletSession(request);
+  if (!session) {
+    sendJson(response, 401, { ok: false, error: "A verified wallet session is required." });
+    return;
+  }
   const body = await readBody(request, 2048);
   let parsed;
   try {
@@ -114,12 +136,106 @@ async function handleWalletConnection(request, response) {
     return;
   }
   const address = parsed && typeof parsed === "object" ? parsed.address : "";
-  if (typeof address !== "string" || !(await isValidTronAddress(address))) {
+  if (typeof address !== "string" || !sameAddress(address, session.address)) {
     sendText(response, 400, "Bad request");
     return;
   }
   await rememberWallet(address);
   sendJson(response, 200, { ok: true });
+}
+
+/**
+ * @param {import("node:http").IncomingMessage} request
+ * @param {import("node:http").ServerResponse} response
+ */
+function handleAuthNonce(request, response) {
+  const context = requestContext(request);
+  if (!context) {
+    sendJson(response, 403, { ok: false, error: "The request origin is not allowed." });
+    return;
+  }
+  const issued = walletAuth.issueNonce();
+  sendJson(response, 200, {
+    ok: true,
+    nonce: issued.nonce,
+    expiresAt: new Date(issued.expiresAt).toISOString(),
+    domain: context.domain,
+    uri: context.uri,
+  });
+}
+
+/**
+ * @param {import("node:http").IncomingMessage} request
+ * @param {import("node:http").ServerResponse} response
+ */
+async function handleAuthVerify(request, response) {
+  const context = requestContext(request);
+  if (!context) {
+    sendJson(response, 403, { ok: false, error: "The request origin is not allowed." });
+    return;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(await readBody(request, 12_000));
+  } catch {
+    sendJson(response, 400, { ok: false, error: "The verification request is invalid." });
+    return;
+  }
+  const message = parsed && typeof parsed === "object" ? parsed.message : "";
+  const signature = parsed && typeof parsed === "object" ? parsed.signature : "";
+  if (typeof message !== "string" || typeof signature !== "string") {
+    sendJson(response, 400, { ok: false, error: "The verification request is invalid." });
+    return;
+  }
+  const verified = await verifySignIn({
+    message,
+    signature,
+    expectedDomain: context.domain,
+    expectedUri: context.uri,
+    consumeNonce: (nonce, now) => walletAuth.consumeNonce(nonce, now),
+  });
+  if (!verified.ok) {
+    sendJson(response, 401, verified);
+    return;
+  }
+  const created = walletAuth.createSession(verified.identity);
+  response.writeHead(200, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+    "Set-Cookie": walletCookie(created.token, context.secure),
+    "X-Content-Type-Options": "nosniff",
+  });
+  response.end(JSON.stringify({ ok: true, session: sessionView(created.session) }));
+}
+
+/**
+ * @param {import("node:http").IncomingMessage} request
+ * @param {import("node:http").ServerResponse} response
+ */
+function handleAuthSession(request, response) {
+  const session = readWalletSession(request);
+  if (!session) {
+    sendJson(response, 200, { ok: true, session: null });
+    return;
+  }
+  sendJson(response, 200, { ok: true, session: sessionView(session) });
+}
+
+/**
+ * @param {import("node:http").IncomingMessage} request
+ * @param {import("node:http").ServerResponse} response
+ */
+function handleAuthLogout(request, response) {
+  const token = cookieValue(request, WALLET_COOKIE);
+  walletAuth.deleteSession(token);
+  const context = requestContext(request);
+  response.writeHead(200, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+    "Set-Cookie": `${WALLET_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${context?.secure ? "; Secure" : ""}`,
+    "X-Content-Type-Options": "nosniff",
+  });
+  response.end(JSON.stringify({ ok: true }));
 }
 
 /**
@@ -209,7 +325,80 @@ function sameSecret(given, expected) {
  */
 function hasSession(request) {
   const token = cookieValue(request, sessionCookie);
-  return token.length > 0 && sessions.has(token);
+  return token.length > 0 && operatorSessions.has(token);
+}
+
+/**
+ * @param {import("node:http").IncomingMessage} request
+ */
+function readWalletSession(request) {
+  return walletAuth.readSession(cookieValue(request, WALLET_COOKIE));
+}
+
+/**
+ * @param {import("node:http").IncomingMessage} request
+ */
+function requestContext(request) {
+  const configured = process.env.PUBLIC_ORIGIN || "";
+  const originHeader = typeof request.headers.origin === "string" ? request.headers.origin : "";
+  const host = typeof request.headers.host === "string" ? request.headers.host : "";
+  let origin;
+  try {
+    origin = new URL(configured || originHeader || `http://${host}`);
+  } catch {
+    return null;
+  }
+  if (!["http:", "https:"].includes(origin.protocol) || !origin.host) return null;
+  if (configured) {
+    const configuredUrl = new URL(configured);
+    if (origin.origin !== configuredUrl.origin) return null;
+    if (originHeader) {
+      try {
+        if (new URL(originHeader).origin !== configuredUrl.origin) return null;
+      } catch {
+        return null;
+      }
+    }
+  } else if (host && origin.host !== host) {
+    return null;
+  }
+  return {
+    domain: origin.host,
+    uri: `${origin.origin}/`,
+    secure: origin.protocol === "https:",
+  };
+}
+
+/**
+ * @param {string} token
+ * @param {boolean} secure
+ */
+function walletCookie(token, secure) {
+  const maxAge = Math.floor(SESSION_TTL_MS / 1000);
+  return `${WALLET_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secure ? "; Secure" : ""}`;
+}
+
+/**
+ * @param {{ address: string, network: "evm" | "tron", chainId: string, walletId: string, expiresAt: number }} session
+ */
+function sessionView(session) {
+  return {
+    address: session.address,
+    network: session.network,
+    chainId: session.chainId,
+    walletId: session.walletId,
+    expiresAt: new Date(session.expiresAt).toISOString(),
+  };
+}
+
+/**
+ * @param {string} first
+ * @param {string} second
+ */
+function sameAddress(first, second) {
+  return first.startsWith("0x") && second.startsWith("0x")
+    ? first.toLowerCase() === second.toLowerCase()
+    : first === second;
 }
 
 /**

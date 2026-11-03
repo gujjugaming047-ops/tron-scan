@@ -107,6 +107,44 @@ a { color: inherit; }
   box-shadow: 0 0 12px var(--accent);
 }
 
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.connected-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 7px 6px 11px;
+  border: 1px solid rgba(66, 245, 141, 0.25);
+  border-radius: 999px;
+  color: #c3d0cb;
+  background: rgba(11, 24, 18, 0.88);
+  font: 650 0.69rem/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.connected-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 10px rgba(66, 245, 141, 0.8);
+}
+
+.connected-chip button {
+  min-height: 24px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 999px;
+  color: #8da099;
+  background: #18251f;
+  cursor: pointer;
+  font: 700 0.62rem/1 system-ui, sans-serif;
+}
+
 .hero {
   display: grid;
   grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.74fr);
@@ -525,7 +563,22 @@ footer span { color: var(--accent); }
 
 .tronlink-logo { color: white; background: #e84142; }
 .trust-logo { color: white; background: #3375bb; }
+.metamask-logo { color: #1d1511; background: #f6851b; }
+.injected-logo { color: #07150d; background: #73e6a2; }
 .option-arrow { color: var(--accent); }
+
+.wallet-option[data-detected="true"]::after {
+  position: absolute;
+  right: 42px;
+  color: var(--accent);
+  content: "Detected";
+  font-size: 0.58rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.wallet-option { position: relative; }
 
 .wallet-status {
   display: grid;
@@ -640,6 +693,7 @@ footer span { color: var(--accent); }
 
 @media (max-width: 540px) {
   .topbar { min-height: 72px; }
+  .connected-chip { max-width: 160px; }
   .network-pill { padding: 7px 10px; font-size: 0.62rem; }
   h1 { font-size: clamp(3.25rem, 17vw, 4.6rem); }
   .hero { padding-top: 56px; }
