@@ -11,6 +11,7 @@ import {
   fetchTronWalletAssets,
   formatTrxFromSun,
   formatUsdtFromUnits,
+  normalizeWalletAssetTokens,
   pickUsdtFromTokenList,
 } from "../src/tron-public.mjs";
 
@@ -72,7 +73,24 @@ describe("public TRON wallet assets", () => {
     assert.equal(usdt.usdtDisplay, "2.5 USDT");
   });
 
-  it("loads balances through the public TronGrid account and metadata endpoints", async () => {
+  it("normalizes empty token payloads to at least 0 TRX", () => {
+    assert.deepEqual(normalizeWalletAssetTokens(null), [{
+      standard: "TRX",
+      symbol: "TRX",
+      name: "TRON",
+      units: "0",
+      display: "0 TRX",
+    }]);
+    assert.deepEqual(normalizeWalletAssetTokens({ trxDisplay: "0 TRX", tokens: [] }), [{
+      standard: "TRX",
+      symbol: "TRX",
+      name: "TRON",
+      units: "0",
+      display: "0 TRX",
+    }]);
+  });
+
+  it("loads balances through the public TronGrid endpoints", async () => {
     /** @type {Array<{ url: string, method: string }>} */
     const calls = [];
     const fetchImpl = /** @type {typeof fetch} */ (async (input, init = {}) => {

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createAuthState, SESSION_TTL_MS, WALLET_COOKIE, verifySignIn } from "../src/auth.mjs";
 import { CONNECTION_TARGET, RECIPIENT, isValidTronAddress, signInRequestContext } from "../src/logic.mjs";
 import { fetchTronWalletAssets } from "../src/tron-public.mjs";
+import { fetchEvmWalletAssets, looksLikeEvmAddress, normalizeEvmChainId } from "../src/evm-public.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.PORT || 4173);
@@ -87,6 +88,10 @@ const server = createServer(async (request, response) => {
     }
     if (url.pathname === "/api/public/wallet-assets" && request.method === "GET") {
       await handlePublicWalletAssets(request, response, url);
+      return;
+    }
+    if (url.pathname === "/api/public/evm-wallet-assets" && request.method === "GET") {
+      await handlePublicEvmWalletAssets(request, response, url);
       return;
     }
     await serveStatic(url.pathname, response);
@@ -441,6 +446,45 @@ async function handlePublicWalletAssets(request, response, url) {
     return;
   }
   sendJson(response, 200, serializeWalletAssetsResponse(address, assets));
+}
+
+/**
+ * @param {import("node:http").IncomingMessage} request
+ * @param {import("node:http").ServerResponse} response
+ * @param {URL} url
+ */
+async function handlePublicEvmWalletAssets(request, response, url) {
+  if (!requestContext(request)) {
+    sendJson(response, 403, { ok: false, error: "The request origin is not allowed." });
+    return;
+  }
+  const address = (url.searchParams.get("address") || "").trim();
+  const chainId = (url.searchParams.get("chainId") || "1").trim();
+  if (!looksLikeEvmAddress(address)) {
+    sendJson(response, 400, { ok: false, error: "The EVM address is invalid." });
+    return;
+  }
+  if (!normalizeEvmChainId(chainId)) {
+    sendJson(response, 400, { ok: false, error: "The EVM chain id is invalid." });
+    return;
+  }
+  const assets = await fetchEvmWalletAssets(address, chainId, { rpcUrl: process.env.EVM_RPC_URL });
+  if (!assets.ok) {
+    sendJson(response, 502, { ok: false, error: assets.error });
+    return;
+  }
+  sendJson(response, 200, {
+    ok: true,
+    network: "evm",
+    chainId: assets.chainId,
+    address,
+    assets: {
+      nativeDisplay: assets.nativeDisplay,
+      nativeSymbol: assets.nativeSymbol,
+      nativeUnits: assets.nativeUnits,
+      tokens: assets.tokens,
+    },
+  });
 }
 
 /**

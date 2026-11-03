@@ -135,6 +135,8 @@ describe("wallet authentication API", () => {
     assert.equal(blockedPublic.status, 403);
     const invalidPublic = await fetch(`${base}/api/public/wallet-assets?address=not-a-tron-address`, { headers });
     assert.equal(invalidPublic.status, 400);
+    const invalidEvm = await fetch(`${base}/api/public/evm-wallet-assets?address=not-evm&chainId=1`, { headers });
+    assert.equal(invalidEvm.status, 400);
   });
 
   it("rejects a mismatched browser origin", async () => {

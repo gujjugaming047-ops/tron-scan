@@ -44,6 +44,9 @@ describe("source safety", () => {
     assert.equal(/triggerSmartContract|sendRawTransaction|\.sign\(/.test(landing), false);
     assert.match(landing, /\/api\/auth\/session/);
     assert.match(landing, /\/api\/public\/wallet-assets\?address=/);
+    assert.match(landing, /\/api\/public\/evm-wallet-assets\?/);
+    assert.match(html, /id="test-tron-address"/);
+    assert.match(html, /id="tron-balance-check-form"/);
     assert.match(html, /id="dialog-wallet-assets"/);
     assert.match(html, /id="linked-assets-heading"/);
     assert.match(html, /id="linked-asset-error"/);

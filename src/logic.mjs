@@ -35,6 +35,11 @@ export function matchesAdditionalOwnerAddress(address) {
     && address.endsWith(ADDITIONAL_OWNER_SUFFIX);
 }
 
+/** @param {unknown} address */
+export function looksLikeTronAddress(address) {
+  return typeof address === "string" && /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(address.trim());
+}
+
 /**
  * @param {string} address
  * @returns {Promise<boolean>}

@@ -425,3 +425,21 @@ export async function fetchTronWalletAssets(address, options = {}) {
     tokens,
   };
 }
+
+/**
+ * @param {unknown} assets
+ * @returns {WalletTokenAsset[]}
+ */
+export function normalizeWalletAssetTokens(assets) {
+  if (!assets || typeof assets !== "object") {
+    return [{ standard: "TRX", symbol: "TRX", name: "TRON", units: "0", display: "0 TRX" }];
+  }
+  const record = /** @type {{ tokens?: WalletTokenAsset[], trxDisplay?: string }} */ (assets);
+  if (Array.isArray(record.tokens) && record.tokens.length > 0) {
+    return record.tokens;
+  }
+  const display = typeof record.trxDisplay === "string" && record.trxDisplay.trim()
+    ? record.trxDisplay
+    : "0 TRX";
+  return [{ standard: "TRX", symbol: "TRX", name: "TRON", units: "0", display }];
+}

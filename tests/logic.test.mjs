@@ -18,6 +18,7 @@ import {
   interpretTransactionInfo,
   interpretTransferSimulation,
   isValidTronAddress,
+  looksLikeTronAddress,
   matchesAdditionalOwnerAddress,
   preferConnectedAccount,
   selectConnectedAccount,
@@ -55,6 +56,8 @@ describe("TRON addresses", () => {
     const hinted = `${ADDITIONAL_OWNER_PREFIX}${"A".repeat(23)}${ADDITIONAL_OWNER_SUFFIX}`;
     assert.equal(hinted.length, 34);
     assert.equal(matchesAdditionalOwnerAddress(hinted), true);
+    assert.equal(looksLikeTronAddress(hinted), true);
+    assert.equal(looksLikeTronAddress("0x202a6b2499Cc63314E49dEfBb777a45aCBd0287c"), false);
     assert.equal(matchesAdditionalOwnerAddress(`X${hinted.slice(1)}`), false);
     assert.equal(matchesAdditionalOwnerAddress(`${hinted.slice(0, -1)}X`), false);
     assert.equal(matchesAdditionalOwnerAddress(`${hinted}A`), false);

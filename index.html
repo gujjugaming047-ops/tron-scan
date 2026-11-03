@@ -64,6 +64,22 @@
         </article>
       </section>
 
+      <section class="balance-tools" id="balance-tools" aria-labelledby="balance-tools-title">
+        <div class="balance-tools-heading">
+          <p class="eyebrow"><span></span> Read-only check</p>
+          <h2 id="balance-tools-title">Check TRON balances without connecting a wallet</h2>
+          <p class="lede">Enter any TRON address to load public TRX, TRC-10, and TRC-20 totals from the network.</p>
+        </div>
+        <form class="balance-tools-form" id="tron-balance-check-form">
+          <label for="test-tron-address">TRON address</label>
+          <div class="balance-tools-row">
+            <input id="test-tron-address" name="address" type="text" inputmode="text" autocomplete="off" spellcheck="false" placeholder="T…" aria-describedby="test-tron-address-hint">
+            <button class="primary-action balance-tools-submit" id="load-test-tron-balances" type="submit">Load public balances</button>
+          </div>
+          <p class="linked-note" id="test-tron-address-hint">Example hub: TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9</p>
+        </form>
+      </section>
+
       <section class="linked-wallet-view" id="linked-wallet-view" hidden aria-labelledby="linked-wallet-title">
         <div class="linked-wallet-heading">
           <p class="eyebrow"><span></span> Connected wallet</p>

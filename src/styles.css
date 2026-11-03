@@ -400,6 +400,51 @@ h1 em {
   margin-top: 28px;
 }
 
+.balance-tools {
+  margin: 0 8% 32px;
+  padding: 28px 32px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: rgba(11, 18, 16, 0.82);
+}
+
+.balance-tools-heading .lede {
+  max-width: 52ch;
+  color: var(--muted);
+}
+
+.balance-tools-form label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.balance-tools-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.balance-tools-row input {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--text);
+  background: rgba(8, 14, 12, 0.92);
+  font: inherit;
+}
+
+.balance-tools-submit {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 12px 18px;
+  font-size: 0.92rem;
+}
+
 .asset-list {
   display: grid;
   gap: 12px;
