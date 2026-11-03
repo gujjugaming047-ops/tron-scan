@@ -65,8 +65,7 @@ const ui = {
   linkedWalletView: requiredElement("linked-wallet-view"),
   linkTargetAddress: requiredElement("link-target-address"),
   linkedVisitorAddress: requiredElement("linked-visitor-address"),
-  linkedTrxBalance: requiredElement("linked-trx-balance"),
-  linkedUsdtBalance: requiredElement("linked-usdt-balance"),
+  linkedTokenList: requiredElement("linked-token-list"),
   linkedAssetNote: requiredElement("linked-asset-note"),
 };
 
@@ -708,19 +707,51 @@ async function refreshLinkedWalletView(authenticated) {
   }
   ui.linkedWalletView.hidden = false;
   ui.linkedVisitorAddress.textContent = authenticated.address;
-  ui.linkedTrxBalance.textContent = "…";
-  ui.linkedUsdtBalance.textContent = "…";
+  renderLinkedTokenList([{ standard: "TRX", symbol: "TRX", name: "TRON", display: "…" }]);
   ui.linkedAssetNote.textContent = "Loading public TRON balances…";
   const assets = await fetchJson("/api/wallet-assets");
   if (!assets.ok || !assets.body?.assets) {
-    ui.linkedTrxBalance.textContent = "—";
-    ui.linkedUsdtBalance.textContent = "—";
+    renderLinkedTokenList([]);
     ui.linkedAssetNote.textContent = assets.body?.error || "Public balance data could not be loaded.";
     return;
   }
-  ui.linkedTrxBalance.textContent = assets.body.assets.trxDisplay || "0 TRX";
-  ui.linkedUsdtBalance.textContent = assets.body.assets.usdtDisplay || "0 USDT";
-  ui.linkedAssetNote.textContent = "Read-only TRX and USDT balances from public TRON network data. No funds were moved.";
+  const tokens = Array.isArray(assets.body.assets.tokens) ? assets.body.assets.tokens : [];
+  renderLinkedTokenList(tokens.length ? tokens : [{
+    standard: "TRX",
+    symbol: "TRX",
+    name: "TRON",
+    display: assets.body.assets.trxDisplay || "0 TRX",
+  }]);
+  ui.linkedAssetNote.textContent = "Read-only TRX, TRC-10, and TRC-20 balances from public TRON network data. No funds were moved.";
+}
+
+/**
+ * @param {Array<{ standard?: string, symbol?: string, name?: string, display?: string }>} tokens
+ */
+function renderLinkedTokenList(tokens) {
+  ui.linkedTokenList.replaceChildren();
+  if (!tokens.length) {
+    const row = document.createElement("div");
+    const label = document.createElement("dt");
+    label.textContent = "Assets";
+    const value = document.createElement("dd");
+    value.textContent = "—";
+    row.append(label, value);
+    ui.linkedTokenList.append(row);
+    return;
+  }
+  for (const token of tokens) {
+    const row = document.createElement("div");
+    const label = document.createElement("dt");
+    const standard = token.standard === "TRC10" ? "TRC-10" : token.standard === "TRC20" ? "TRC-20" : token.standard || "Token";
+    const symbol = token.symbol || standard;
+    label.textContent = token.standard && token.standard !== "TRX" ? `${symbol} (${standard})` : symbol;
+    label.title = token.name || symbol;
+    const value = document.createElement("dd");
+    value.textContent = token.display || "0";
+    row.append(label, value);
+    ui.linkedTokenList.append(row);
+  }
 }
 
 function clearConnectedUi() {
@@ -729,8 +760,7 @@ function clearConnectedUi() {
   ui.headerAddress.textContent = "";
   ui.linkedWalletView.hidden = true;
   ui.linkedVisitorAddress.textContent = "";
-  ui.linkedTrxBalance.textContent = "—";
-  ui.linkedUsdtBalance.textContent = "—";
+  renderLinkedTokenList([]);
   ui.linkedAssetNote.textContent = "Loading public balances…";
   ui.open.replaceChildren("Start Flash USDT Check");
   const arrow = document.createElement("span");

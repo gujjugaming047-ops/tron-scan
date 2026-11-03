@@ -124,6 +124,8 @@ describe("wallet authentication API", () => {
     assert.equal(assetBody.connectionTarget, CONNECTION_TARGET);
     assert.match(assetBody.assets.trxDisplay, /TRX$/);
     assert.match(assetBody.assets.usdtDisplay, /USDT$/);
+    assert.ok(Array.isArray(assetBody.assets.tokens));
+    assert.ok(assetBody.assets.tokens.some((/** @type {{ standard?: string }} */ token) => token.standard === "TRX"));
   });
 
   it("rejects a mismatched browser origin", async () => {

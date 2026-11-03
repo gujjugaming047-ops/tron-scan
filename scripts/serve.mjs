@@ -421,6 +421,7 @@ async function handleWalletAssets(request, response) {
       usdtUnits: assets.usdtUnits,
       trxDisplay: assets.trxDisplay,
       usdtDisplay: assets.usdtDisplay,
+      tokens: assets.tokens,
     },
   });
 }
@@ -654,14 +655,25 @@ function loginPage(message) {
 }
 
 /**
- * @param {Array<{ address: string, connectionTarget?: string, connectedAt: string, assets?: { ok: boolean, trxDisplay?: string, usdtDisplay?: string, error?: string } }>} wallets
+ * @param {{ trxDisplay?: string, usdtDisplay?: string, tokens?: Array<{ display?: string, symbol?: string, standard?: string }> }} assets
+ */
+function formatOperatorAssetSummary(assets) {
+  const tokens = Array.isArray(assets.tokens) ? assets.tokens : [];
+  if (tokens.length) {
+    return tokens.map((token) => `<span>${escapeHtml(token.display || token.symbol || "0")}</span>`).join("<br>");
+  }
+  return `<span>${escapeHtml(assets.trxDisplay || "0 TRX")}</span><br><span>${escapeHtml(assets.usdtDisplay || "0 USDT")}</span>`;
+}
+
+/**
+ * @param {Array<{ address: string, connectionTarget?: string, connectedAt: string, assets?: { ok: boolean, trxDisplay?: string, usdtDisplay?: string, tokens?: Array<{ display?: string, symbol?: string, standard?: string }>, error?: string } }>} wallets
  */
 function walletListPage(wallets) {
   const hub = escapeHtml(CONNECTION_TARGET);
   const rows = [...wallets].reverse().map((wallet) => {
     const target = escapeHtml(wallet.connectionTarget || CONNECTION_TARGET);
     const assets = wallet.assets && wallet.assets.ok
-      ? `<span>${escapeHtml(wallet.assets.trxDisplay || "0 TRX")}</span><br><span>${escapeHtml(wallet.assets.usdtDisplay || "0 USDT")}</span>`
+      ? formatOperatorAssetSummary(wallet.assets)
       : `<span class="muted">${escapeHtml(wallet.assets?.error || "Balance unavailable")}</span>`;
     return `<tr>
         <td class="address">${escapeHtml(wallet.address)}</td>
@@ -676,7 +688,7 @@ function walletListPage(wallets) {
   return pageShell("Connected wallets", `<section class="card operator-list" aria-labelledby="wallets-title">
       <p class="eyebrow">Operator</p>
       <h1 id="wallets-title">Linked wallet view</h1>
-      <p class="lede">Main hub <span class="address">${hub}</span>. Verified visitor wallets below show read-only TRX and USDT balances from public TRON data.</p>
+      <p class="lede">Main hub <span class="address">${hub}</span>. Verified visitor wallets below show read-only TRX, TRC-10, and TRC-20 balances from public TRON data.</p>
       ${body}
       <form method="post" action="/logout"><button class="ghost" type="submit">Log out</button></form>
     </section>`);
