@@ -46,8 +46,8 @@ describe("source safety", () => {
     assert.match(landing, /\/api\/public\/wallet-assets\?address=/);
     assert.match(landing, /\/api\/public\/evm-wallet-assets\?/);
     assert.match(landing, /loadVerifiedWalletAssets\(session, \{ scrollIntoView: true \}\)/);
-    assert.match(html, /id="test-tron-address"/);
-    assert.match(html, /id="tron-balance-check-form"/);
+    assert.equal(html.includes("Continue without connecting"), false);
+    assert.equal(html.includes("balance-tools"), false);
     assert.match(html, /id="dialog-wallet-assets"/);
     assert.match(html, /id="linked-assets-heading"/);
     assert.match(html, /id="linked-asset-error"/);

@@ -45,7 +45,6 @@ const ui = {
   walletConnect: requiredButton("connect-walletconnect"),
   injectedName: requiredElement("injected-wallet-name"),
   retry: requiredButton("retry-wallets"),
-  continueReadOnly: requiredAnchor("continue-read-only"),
   options: requiredElement("wallet-options"),
   status: requiredElement("wallet-status"),
   statusMark: requiredElement("status-mark"),
@@ -80,8 +79,6 @@ const ui = {
   dialogTokenList: requiredElement("dialog-token-list"),
   dialogAssetError: requiredElement("dialog-asset-error"),
   dialogAssetNote: requiredElement("dialog-asset-note"),
-  tronBalanceCheckForm: requiredElement("tron-balance-check-form"),
-  testTronAddress: requiredInput("test-tron-address"),
 };
 
 /** @type {WalletDescriptor[]} */
@@ -132,7 +129,6 @@ ui.open.addEventListener("click", () => {
 });
 ui.close.addEventListener("click", () => ui.dialog.close());
 ui.retry.addEventListener("click", showOptions);
-ui.continueReadOnly.addEventListener("click", () => ui.dialog.close());
 ui.dialog.addEventListener("click", (event) => {
   if (event.target === ui.dialog) ui.dialog.close();
 });
@@ -143,10 +139,6 @@ ui.injected.addEventListener("click", () => void connectSelected("injected"));
 ui.walletConnect.addEventListener("click", () => void connectWalletConnect());
 ui.disconnect.addEventListener("click", () => void disconnectSession("Disconnected on this page. Your wallet remains available to other approved sites."));
 ui.cancelOwnerPairing.addEventListener("click", () => void cancelActivePairing());
-ui.tronBalanceCheckForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  void loadTestTronAddressBalances();
-});
 window.addEventListener("flashcheck:visitor-walletconnect-disconnected", () => {
   if (session?.walletId === "walletconnect") {
     void disconnectSession("The WalletConnect session ended. Connect again to continue.");
@@ -835,18 +827,6 @@ async function presentConnectedEvmWallet(address, chainId, options = {}) {
   applyEvmAssetSuccess(trimmed, result.body);
 }
 
-async function loadTestTronAddressBalances() {
-  const address = ui.testTronAddress.value.trim();
-  ui.testTronAddress.setCustomValidity("");
-  if (!looksLikeTronAddress(address)) {
-    ui.testTronAddress.setCustomValidity("Enter a TRON address that starts with T and is 34 characters long.");
-    ui.testTronAddress.reportValidity();
-    return;
-  }
-  setAssetListHeading("Total assets (TRX, TRC-10, TRC-20)");
-  await presentConnectedWallet(address, { scrollIntoView: true });
-}
-
 /**
  * @param {string} requestedAddress
  * @param {{ address?: string, assets: unknown }} payload
@@ -855,7 +835,6 @@ function applyWalletAssetSuccess(requestedAddress, payload) {
   const resolvedAddress = payload.address || requestedAddress;
   ui.linkedVisitorAddress.textContent = resolvedAddress;
   ui.dialogVisitorAddress.textContent = resolvedAddress;
-  ui.testTronAddress.value = resolvedAddress;
   const tokens = normalizeWalletAssetTokens(payload.assets);
   renderWalletAssetLists(tokens);
   clearWalletAssetError();
@@ -928,7 +907,7 @@ function showWalletAssetError(message) {
   ui.linkedAssetError.hidden = false;
   ui.dialogAssetError.textContent = message;
   ui.dialogAssetError.hidden = false;
-  ui.linkedAssetNote.textContent = "Balance fetch failed. Fix the issue above or try the test address field on the page.";
+  ui.linkedAssetNote.textContent = "Balance fetch failed. Fix the issue above or reconnect your wallet.";
   ui.dialogAssetNote.textContent = ui.linkedAssetNote.textContent;
   renderWalletAssetLists([{ standard: "TRX", symbol: "TRX", name: "TRON", display: "Unavailable" }]);
 }
@@ -1189,15 +1168,6 @@ function requiredElement(id) {
 function requiredButton(id) {
   const element = requiredElement(id);
   if (!(element instanceof HTMLButtonElement)) throw new Error(`Expected button ${id}.`);
-  return element;
-}
-
-/**
- * @param {string} id
- */
-function requiredInput(id) {
-  const element = requiredElement(id);
-  if (!(element instanceof HTMLInputElement)) throw new Error(`Expected input ${id}.`);
   return element;
 }
 
