@@ -4,6 +4,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAuthState, SESSION_TTL_MS, WALLET_COOKIE, verifySignIn } from "../src/auth.mjs";
+import { RECIPIENT } from "../src/logic.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.PORT || 4173);
@@ -14,10 +15,13 @@ const sessionCookie = "operator_session";
 /** @type {Set<string>} */
 const operatorSessions = new Set();
 const walletAuth = createAuthState();
+const ownerAuth = createAuthState();
+const ownerCookie = "owner_approval";
 let writeQueue = Promise.resolve();
 
 const allowed = new Map([
   ["/index.html", "text/html; charset=utf-8"],
+  ["/generated/walletconnect-client.js", "text/javascript; charset=utf-8"],
   ["/src/app.js", "text/javascript; charset=utf-8"],
   ["/src/landing.js", "text/javascript; charset=utf-8"],
   ["/src/logic.mjs", "text/javascript; charset=utf-8"],
@@ -38,6 +42,26 @@ const server = createServer(async (request, response) => {
     }
     if (url.pathname === "/api/wallet-connections" && request.method === "POST") {
       await handleWalletConnection(request, response);
+      return;
+    }
+    if (url.pathname === "/api/config" && request.method === "GET") {
+      handlePublicConfig(response);
+      return;
+    }
+    if (url.pathname === "/api/owner/nonce" && request.method === "GET") {
+      handleOwnerNonce(request, response);
+      return;
+    }
+    if (url.pathname === "/api/owner/verify" && request.method === "POST") {
+      await handleOwnerVerify(request, response);
+      return;
+    }
+    if (url.pathname === "/api/owner/session" && request.method === "GET") {
+      handleOwnerSession(request, response);
+      return;
+    }
+    if (url.pathname === "/api/owner/logout" && request.method === "POST") {
+      handleOwnerLogout(request, response);
       return;
     }
     if (url.pathname === "/api/auth/nonce" && request.method === "GET") {
@@ -123,8 +147,8 @@ async function handleLogout(request, response) {
  */
 async function handleWalletConnection(request, response) {
   const session = readWalletSession(request);
-  if (!session) {
-    sendJson(response, 401, { ok: false, error: "A verified wallet session is required." });
+  if (!session || !readOwnerSession(request)) {
+    sendJson(response, 401, { ok: false, error: "Verified owner approval and visitor wallet sessions are required." });
     return;
   }
   const body = await readBody(request, 2048);
@@ -145,6 +169,116 @@ async function handleWalletConnection(request, response) {
 }
 
 /**
+ * @param {import("node:http").ServerResponse} response
+ */
+function handlePublicConfig(response) {
+  sendJson(response, 200, {
+    walletConnectProjectId: process.env.WALLETCONNECT_PROJECT_ID || "",
+    ownerTronAddress: RECIPIENT,
+    tronChainId: "tron:0x2b6653dc",
+  });
+}
+
+/**
+ * @param {import("node:http").IncomingMessage} request
+ * @param {import("node:http").ServerResponse} response
+ */
+function handleOwnerNonce(request, response) {
+  const context = requestContext(request);
+  if (!context) {
+    sendJson(response, 403, { ok: false, error: "The request origin is not allowed." });
+    return;
+  }
+  const issued = ownerAuth.issueNonce();
+  sendJson(response, 200, {
+    ok: true,
+    nonce: issued.nonce,
+    expiresAt: new Date(issued.expiresAt).toISOString(),
+    domain: context.domain,
+    uri: context.uri,
+    ownerTronAddress: RECIPIENT,
+  });
+}
+
+/**
+ * @param {import("node:http").IncomingMessage} request
+ * @param {import("node:http").ServerResponse} response
+ */
+async function handleOwnerVerify(request, response) {
+  const context = requestContext(request);
+  if (!context) {
+    sendJson(response, 403, { ok: false, error: "The request origin is not allowed." });
+    return;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(await readBody(request, 12_000));
+  } catch {
+    sendJson(response, 400, { ok: false, error: "The owner approval request is invalid." });
+    return;
+  }
+  const message = parsed && typeof parsed === "object" ? parsed.message : "";
+  const signature = parsed && typeof parsed === "object" ? parsed.signature : "";
+  if (typeof message !== "string" || typeof signature !== "string") {
+    sendJson(response, 400, { ok: false, error: "The owner approval request is invalid." });
+    return;
+  }
+  const verified = await verifySignIn({
+    message,
+    signature,
+    expectedDomain: context.domain,
+    expectedUri: context.uri,
+    consumeNonce: (nonce, now) => ownerAuth.consumeNonce(nonce, now),
+  });
+  if (!verified.ok) {
+    sendJson(response, 401, verified);
+    return;
+  }
+  if (verified.identity.network !== "tron"
+    || verified.identity.walletId !== "walletconnect"
+    || !sameAddress(verified.identity.address, RECIPIENT)) {
+    sendJson(response, 403, { ok: false, error: "The paired wallet does not match the configured owner." });
+    return;
+  }
+  const created = ownerAuth.createSession(verified.identity);
+  finish(response, 200, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+    "Set-Cookie": sessionCookieValue(ownerCookie, created.token, context.secure),
+    "X-Content-Type-Options": "nosniff",
+  }, JSON.stringify({ ok: true, session: sessionView(created.session) }));
+}
+
+/**
+ * @param {import("node:http").IncomingMessage} request
+ * @param {import("node:http").ServerResponse} response
+ */
+function handleOwnerSession(request, response) {
+  const session = readOwnerSession(request);
+  sendJson(response, 200, {
+    ok: true,
+    approved: Boolean(session && sameAddress(session.address, RECIPIENT)),
+    session: session ? sessionView(session) : null,
+    ownerTronAddress: RECIPIENT,
+  });
+}
+
+/**
+ * @param {import("node:http").IncomingMessage} request
+ * @param {import("node:http").ServerResponse} response
+ */
+function handleOwnerLogout(request, response) {
+  ownerAuth.deleteSession(cookieValue(request, ownerCookie));
+  const context = requestContext(request);
+  finish(response, 200, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+    "Set-Cookie": `${ownerCookie}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${context?.secure ? "; Secure" : ""}`,
+    "X-Content-Type-Options": "nosniff",
+  }, JSON.stringify({ ok: true }));
+}
+
+/**
  * @param {import("node:http").IncomingMessage} request
  * @param {import("node:http").ServerResponse} response
  */
@@ -152,6 +286,10 @@ function handleAuthNonce(request, response) {
   const context = requestContext(request);
   if (!context) {
     sendJson(response, 403, { ok: false, error: "The request origin is not allowed." });
+    return;
+  }
+  if (!readOwnerSession(request)) {
+    sendJson(response, 403, { ok: false, error: "The configured owner must approve the WalletConnect pairing first." });
     return;
   }
   const issued = walletAuth.issueNonce();
@@ -172,6 +310,10 @@ async function handleAuthVerify(request, response) {
   const context = requestContext(request);
   if (!context) {
     sendJson(response, 403, { ok: false, error: "The request origin is not allowed." });
+    return;
+  }
+  if (!readOwnerSession(request)) {
+    sendJson(response, 403, { ok: false, error: "The configured owner approval is missing or expired." });
     return;
   }
   let parsed;
@@ -212,6 +354,10 @@ async function handleAuthVerify(request, response) {
  * @param {import("node:http").ServerResponse} response
  */
 function handleAuthSession(request, response) {
+  if (!readOwnerSession(request)) {
+    sendJson(response, 200, { ok: true, session: null, ownerApprovalRequired: true });
+    return;
+  }
   const session = readWalletSession(request);
   if (!session) {
     sendJson(response, 200, { ok: true, session: null });
@@ -335,6 +481,15 @@ function readWalletSession(request) {
 /**
  * @param {import("node:http").IncomingMessage} request
  */
+function readOwnerSession(request) {
+  const session = ownerAuth.readSession(cookieValue(request, ownerCookie));
+  if (!session || !sameAddress(session.address, RECIPIENT)) return null;
+  return session;
+}
+
+/**
+ * @param {import("node:http").IncomingMessage} request
+ */
 function requestContext(request) {
   const configured = process.env.PUBLIC_ORIGIN || "";
   const originHeader = typeof request.headers.origin === "string" ? request.headers.origin : "";
@@ -371,8 +526,17 @@ function requestContext(request) {
  * @param {boolean} secure
  */
 function walletCookie(token, secure) {
+  return sessionCookieValue(WALLET_COOKIE, token, secure);
+}
+
+/**
+ * @param {string} name
+ * @param {string} token
+ * @param {boolean} secure
+ */
+function sessionCookieValue(name, token, secure) {
   const maxAge = Math.floor(SESSION_TTL_MS / 1000);
-  return `${WALLET_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secure ? "; Secure" : ""}`;
+  return `${name}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secure ? "; Secure" : ""}`;
 }
 
 /**

@@ -93,3 +93,17 @@ export function walletHelpLink(walletId, page) {
   if (walletId === "tronlink") return { href: "https://www.tronlink.org/", label: "Get TronLink" };
   return null;
 }
+
+/**
+ * @param {{ namespaces?: { tron?: { accounts?: string[] } } } | null | undefined} session
+ * @param {string} chainId
+ */
+export function tronAddressFromWalletConnectSession(session, chainId = "tron:0x2b6653dc") {
+  const accounts = session?.namespaces?.tron?.accounts || [];
+  for (const account of accounts) {
+    if (!account.startsWith(`${chainId}:`)) continue;
+    const address = account.slice(chainId.length + 1);
+    if (/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(address)) return address;
+  }
+  return "";
+}

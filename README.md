@@ -8,7 +8,15 @@ The wallet flow supports MetaMask, Trust Wallet, TronLink, and EIP-6963/injected
 
 The app never asks for a recovery phrase, private key, or wallet password. Account or network changes invalidate the old verified session. Manual disconnect clears the server session but does not revoke the wallet’s own connected-sites permission.
 
-Run `npm start` and open `http://127.0.0.1:4173` to preview it. Run `npm run check` for syntax, type, unit, safety, and build checks. The authentication API runs in the Node preview server; production deployment therefore needs the same server process, HTTPS, and (when behind a proxy) `PUBLIC_ORIGIN=https://your-host` so signed messages are pinned to the deployed origin.
+Before a visitor wallet can authenticate, the configured owner must approve through WalletConnect. The owner is fixed to TRON address `TG94XL9N1uVHPM4U4zcpYGc6w1i7nUBuiq`; a different paired account is rejected. Set the public WalletConnect Cloud project identifier in the server environment:
+
+```bash
+WALLETCONNECT_PROJECT_ID=your_real_project_id npm start
+```
+
+The app does not contain or invent a project ID. Clicking **Start Flash USDT Check** displays a WalletConnect QR code and mobile `wc:` link. The owner scans or opens it in a TRON-compatible WalletConnect wallet, approves the pairing, and signs the displayed login message. The message is not a transaction. Only after the server verifies that signature against the configured owner address are the visitor wallet options enabled.
+
+Run `npm start` and open `http://127.0.0.1:4173` to preview it. Run `npm run check` for syntax, type, unit, safety, and build checks. The authentication API runs in the Node preview server; production deployment therefore needs the same server process, HTTPS, `WALLETCONNECT_PROJECT_ID`, and (when behind a proxy) `PUBLIC_ORIGIN=https://your-host` so signed messages are pinned to the deployed origin.
 
 ## Legacy payment implementation
 

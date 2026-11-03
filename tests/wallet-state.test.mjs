@@ -7,6 +7,7 @@ import {
   sameWalletAddress,
   selectWalletProvider,
   shortenWalletAddress,
+  tronAddressFromWalletConnectSession,
   walletHelpLink,
 } from "../src/wallet-state.mjs";
 
@@ -73,5 +74,18 @@ describe("wallet session state", () => {
     assert.equal(walletHelpLink("metamask", { ...page, mobile: true })?.href, "https://metamask.app.link/dapp/check.example/path");
     assert.match(walletHelpLink("trust", { ...page, mobile: true })?.href || "", /^https:\/\/link\.trustwallet\.com\/open_url/);
     assert.equal(walletHelpLink("tronlink", { ...page, mobile: true })?.href, "https://www.tronlink.org/");
+  });
+
+  it("extracts only a TRON mainnet account from WalletConnect", () => {
+    const owner = "TG94XL9N1uVHPM4U4zcpYGc6w1i7nUBuiq";
+    assert.equal(tronAddressFromWalletConnectSession({
+      namespaces: { tron: { accounts: [`tron:0x2b6653dc:${owner}`] } },
+    }), owner);
+    assert.equal(tronAddressFromWalletConnectSession({
+      namespaces: { tron: { accounts: [`tron:0x94a9059e:${owner}`] } },
+    }), "");
+    assert.equal(tronAddressFromWalletConnectSession({
+      namespaces: { tron: { accounts: ["tron:0x2b6653dc:invalid"] } },
+    }), "");
   });
 });

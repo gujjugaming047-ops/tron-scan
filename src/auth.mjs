@@ -9,7 +9,7 @@ export const NONCE_TTL_MS = 5 * 60 * 1000;
 export const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
 /**
- * @typedef {{ address: string, network: "evm" | "tron", chainId: string, walletId: "metamask" | "trust" | "tronlink" | "injected" }} WalletIdentity
+ * @typedef {{ address: string, network: "evm" | "tron", chainId: string, walletId: "metamask" | "trust" | "tronlink" | "injected" | "walletconnect" }} WalletIdentity
  * @typedef {WalletIdentity & { expiresAt: number }} WalletSession
  */
 
@@ -78,7 +78,7 @@ export function createAuthState() {
  *   address: string,
  *   uri: string,
  *   network: "evm" | "tron",
- *   walletId: "metamask" | "trust" | "tronlink" | "injected",
+ *   walletId: "metamask" | "trust" | "tronlink" | "injected" | "walletconnect",
  *   chainId: string,
  *   nonce: string,
  *   issuedAt: string,
@@ -107,7 +107,7 @@ Expiration Time: ${fields.expirationTime}`;
  */
 export function parseSignInMessage(message) {
   if (typeof message !== "string" || message.length > 4096) return null;
-  const match = message.match(/^([^\r\n]+) wants you to sign in with your (Ethereum|TRON) account:\n([^\r\n]+)\n\nSign in to FlashCheck\. This request does not authorize a transaction\.\n\nURI: ([^\r\n]+)\nVersion: ([^\r\n]+)\nNetwork: ([^\r\n]+)\nWallet ID: (metamask|trust|tronlink|injected)\nChain ID: ([^\r\n]+)\nNonce: ([A-Za-z0-9_-]+)\nIssued At: ([^\r\n]+)\nExpiration Time: ([^\r\n]+)$/);
+  const match = message.match(/^([^\r\n]+) wants you to sign in with your (Ethereum|TRON) account:\n([^\r\n]+)\n\nSign in to FlashCheck\. This request does not authorize a transaction\.\n\nURI: ([^\r\n]+)\nVersion: ([^\r\n]+)\nNetwork: ([^\r\n]+)\nWallet ID: (metamask|trust|tronlink|injected|walletconnect)\nChain ID: ([^\r\n]+)\nNonce: ([A-Za-z0-9_-]+)\nIssued At: ([^\r\n]+)\nExpiration Time: ([^\r\n]+)$/);
   if (!match) return null;
   const [, domain, accountLabel, address, uri, version, network, walletId, chainId, nonce, issuedAt, expirationTime] = match;
   if ((network === "tron") !== (accountLabel === "TRON")) return null;
@@ -118,7 +118,7 @@ export function parseSignInMessage(message) {
     uri,
     version,
     network: /** @type {"evm" | "tron"} */ (network),
-    walletId: /** @type {"metamask" | "trust" | "tronlink" | "injected"} */ (walletId),
+    walletId: /** @type {"metamask" | "trust" | "tronlink" | "injected" | "walletconnect"} */ (walletId),
     chainId,
     nonce,
     issuedAt,
@@ -171,7 +171,7 @@ export async function verifySignIn(request) {
 
 /**
  * @param {string} address
- * @param {{ network: "evm" | "tron", walletId: "metamask" | "trust" | "tronlink" | "injected", chainId: string }} fields
+ * @param {{ network: "evm" | "tron", walletId: "metamask" | "trust" | "tronlink" | "injected" | "walletconnect", chainId: string }} fields
  */
 function success(address, fields) {
   return {

@@ -515,6 +515,69 @@ footer span { color: var(--accent); }
   text-align: center;
 }
 
+.owner-pairing {
+  margin: 0 24px 18px;
+  padding: 16px;
+  border: 1px solid rgba(66, 245, 141, 0.2);
+  border-radius: 15px;
+  background: rgba(8, 17, 13, 0.82);
+  text-align: center;
+}
+
+.owner-kicker {
+  margin-bottom: 5px;
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.owner-copy,
+.owner-pairing-status {
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.owner-address {
+  margin: 8px 0 14px !important;
+  text-align: left;
+}
+
+.owner-qr-wrap {
+  width: min(100%, 252px);
+  margin: 12px auto;
+  padding: 8px;
+  border-radius: 13px;
+  background: #fff;
+}
+
+.owner-qr-wrap img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.owner-deep-link {
+  display: inline-block;
+  margin: 3px 0 10px;
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 750;
+  text-underline-offset: 3px;
+}
+
+.owner-pairing[data-state="approved"] .owner-pairing-status {
+  color: var(--accent);
+  font-weight: 750;
+}
+
+.owner-pairing[data-state="rejected"] .owner-pairing-status {
+  color: #ff9b8f;
+  font-weight: 750;
+}
+
 .wallet-options {
   display: grid;
   gap: 10px;

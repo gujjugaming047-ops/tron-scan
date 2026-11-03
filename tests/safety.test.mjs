@@ -8,7 +8,7 @@ const root = path.resolve(import.meta.dirname, "..");
 
 describe("source safety", () => {
   it("does not collect secrets or build a hidden token approval", () => {
-    const files = ["index.html", "src/app.js", "src/auth.mjs", "src/landing.js", "src/logic.mjs", "src/styles.css", "src/wallet-state.mjs", "scripts/make-qr.mjs", "scripts/make-local-receive-qr.mjs"];
+    const files = ["index.html", "src/app.js", "src/auth.mjs", "src/landing.js", "src/logic.mjs", "src/styles.css", "src/wallet-state.mjs", "src/walletconnect-client.js", "scripts/build-walletconnect.mjs", "scripts/make-qr.mjs", "scripts/make-local-receive-qr.mjs"];
     const forbidden = [
       /\.approve\s*\(/,
       /\btransferFrom\s*\(/,
@@ -28,6 +28,7 @@ describe("source safety", () => {
     assert.match(logic, /private key\|seed phrase\|mnemonic\|secret phrase/);
     const app = readFileSync(path.join(root, "src/app.js"), "utf8");
     const landing = readFileSync(path.join(root, "src/landing.js"), "utf8");
+    const walletConnect = readFileSync(path.join(root, "src/walletconnect-client.js"), "utf8");
     const server = readFileSync(path.join(root, "scripts/serve.mjs"), "utf8");
     const html = readFileSync(path.join(root, "index.html"), "utf8");
     assert.equal(app.match(/eth_requestAccounts/g)?.length, 1);
@@ -44,6 +45,10 @@ describe("source safety", () => {
     assert.match(landing, /\/api\/auth\/session/);
     assert.match(landing, /accountsChanged/);
     assert.match(landing, /chainChanged/);
+    assert.match(landing, /WALLETCONNECT_PROJECT_ID/);
+    assert.match(walletConnect, /tron:0x2b6653dc/);
+    assert.match(walletConnect, /tron_signMessage/);
+    assert.equal(/tron_signTransaction|eth_sendTransaction|sendRawTransaction/.test(walletConnect), false);
     assert.equal(server.match(/response\.writeHead/g)?.length, 1);
     assert.equal(server.match(/response\.end\(/g)?.length, 1);
     assert.match(server, /finish\(response, 500,/);
@@ -54,7 +59,7 @@ describe("source safety", () => {
     assert.match(html, /Never enter a seed phrase or private key/);
     assert.match(html, /https:\/\/tronscan\.org\/#\/token20\//);
     assert.equal(html.includes("tron:"), false);
-    assert.equal(html.includes(RECIPIENT), false);
+    assert.equal(html.includes(RECIPIENT), true);
     assert.equal(html.includes(USDT_CONTRACT), true);
     assert.equal(/<script(?![^>]+src="\.\/src\/landing\.js")[^>]*>/i.test(html), false);
   });
