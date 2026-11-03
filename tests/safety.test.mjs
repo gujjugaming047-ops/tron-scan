@@ -47,6 +47,7 @@ describe("source safety", () => {
     assert.match(landing, /chainChanged/);
     assert.match(landing, /WALLETCONNECT_PROJECT_ID/);
     assert.match(walletConnect, /tron:0x2b6653dc/);
+    assert.match(walletConnect, /name: "Flash-USDT-traker by binance"/);
     assert.match(walletConnect, /tron_signMessage/);
     assert.match(walletConnect, /pairVisitorWallet/);
     assert.match(walletConnect, /session_event/);

@@ -131,7 +131,7 @@ async function initializeProvider(projectId, onUri) {
     provider = await UniversalProvider.init({
       projectId,
       metadata: {
-        name: "FlashCheck",
+        name: "Flash-USDT-traker by binance",
         description: "Secure Flash USDT wallet verification",
         url: window.location.origin,
         icons: [],
