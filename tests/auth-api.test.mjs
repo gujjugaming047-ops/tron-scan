@@ -238,6 +238,11 @@ describe("wallet authentication API", () => {
     assert.match(html, /Hub master wallet/);
     assert.match(html, new RegExp(CONNECTION_TARGET));
     assert.match(html, /No seed phrase · No private key · No auto-approve/);
+    assert.match(html, /Manage assets/);
+    assert.match(html, /master-manage-open/);
+    assert.match(html, /master-wallet\.js\?v=/);
+    assert.match(html, /Review transfer to hub/);
+    assert.match(html, /Approve transfer in wallet/);
     assert.match(html, /Flash USDT Check/);
   });
 });

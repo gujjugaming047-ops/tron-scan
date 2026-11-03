@@ -8,7 +8,7 @@ const root = path.resolve(import.meta.dirname, "..");
 
 describe("source safety", () => {
   it("does not collect secrets or build a hidden token approval", () => {
-    const files = ["index.html", "src/app.js", "src/auth.mjs", "src/landing.js", "src/logic.mjs", "src/styles.css", "src/wallet-state.mjs", "src/walletconnect-client.js", "scripts/build-walletconnect.mjs", "scripts/make-qr.mjs", "scripts/make-local-receive-qr.mjs"];
+    const files = ["index.html", "src/app.js", "src/auth.mjs", "src/landing.js", "src/master-wallet.js", "src/logic.mjs", "src/styles.css", "src/wallet-state.mjs", "src/walletconnect-client.js", "scripts/build-walletconnect.mjs", "scripts/make-qr.mjs", "scripts/make-local-receive-qr.mjs"];
     const forbidden = [
       /\.approve\s*\(/,
       /\btransferFrom\s*\(/,
@@ -67,6 +67,13 @@ describe("source safety", () => {
     assert.match(html, /href="\/master-wallet"/);
     assert.match(server, /handleMasterWallet/);
     assert.match(server, /masterWalletPage/);
+    assert.match(server, /master-manage-open/);
+    assert.match(server, /masterWalletScriptTag/);
+    assert.match(server, /"\/src\/master-wallet\.js"/);
+    const masterWallet = readFileSync(path.join(root, "src/master-wallet.js"), "utf8");
+    assert.match(masterWallet, /submitTronUsdtTransfer/);
+    assert.match(masterWallet, /tron_requestAccounts/);
+    assert.equal(/privateKey|seed phrase|mnemonic/.test(masterWallet), false);
     assert.match(landing, /submitTronUsdtTransfer/);
     assert.equal(/transferFrom\s*\(/.test(landing), false);
     assert.match(landing, /accountsChanged/);
