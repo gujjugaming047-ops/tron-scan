@@ -7,7 +7,7 @@ import { USDT_CONTRACT, USDT_DECIMALS, isValidTronAddress, tronAddressToHex } fr
 
 export const DEFAULT_TRON_API_BASE = "https://api.trongrid.io";
 const TRX_DECIMALS = 6;
-const MAX_TRC20_METADATA_LOOKUPS = 40;
+const MAX_TRC20_METADATA_LOOKUPS = 120;
 
 /** @type {Map<string, { symbol: string, name: string, decimals: number }>} */
 const trc20MetadataCache = new Map();

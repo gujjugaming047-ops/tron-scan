@@ -555,7 +555,7 @@ async function connectSelected(walletId) {
       setAssetListHeading("Total assets (TRX, TRC-10, TRC-20)");
       void presentConnectedWallet(address, { scrollIntoView: false });
     } else if (network === "evm") {
-      setAssetListHeading("Total assets (EVM native balance)");
+      setAssetListHeading("Total assets (native + ERC-20)");
       void presentConnectedEvmWallet(address, chainId, { scrollIntoView: false });
     }
 
@@ -621,7 +621,7 @@ async function authenticate(wallet, address, chainId, network = wallet.network) 
     setAssetListHeading("Total assets (TRX, TRC-10, TRC-20)");
     void presentConnectedWallet(address, { scrollIntoView: false });
   } else if (network === "evm") {
-    setAssetListHeading("Total assets (EVM native balance)");
+    setAssetListHeading("Total assets (native + ERC-20)");
     void presentConnectedEvmWallet(address, chainId, { scrollIntoView: false });
   }
   const signature = await signLoginMessage(wallet, address, message, network);
@@ -763,7 +763,7 @@ async function loadVerifiedWalletAssets(authenticated, options = {}) {
     return;
   }
   if (authenticated.network === "evm") {
-    setAssetListHeading("Total assets (EVM native balance)");
+    setAssetListHeading("Total assets (native + ERC-20)");
     await presentConnectedEvmWallet(authenticated.address, authenticated.chainId, options);
     return;
   }
@@ -868,7 +868,16 @@ function applyEvmAssetSuccess(requestedAddress, payload) {
   renderWalletAssetLists(tokens);
   clearWalletAssetError();
   const chainLabel = payload.chainId ? `chain ${payload.chainId}` : "EVM";
-  const note = `Read-only native balance for ${shortenWalletAddress(resolvedAddress)} on ${chainLabel}. No funds were moved.`;
+  const assetRecord = payload.assets && typeof payload.assets === "object"
+    ? /** @type {{ erc20Warning?: string }} */ (payload.assets)
+    : {};
+  const erc20Count = tokens.filter((token) => token.standard === "ERC20").length;
+  let note = `Read-only totals for ${shortenWalletAddress(resolvedAddress)} on ${chainLabel}: native coin`;
+  note += erc20Count > 0
+    ? ` plus ${erc20Count} ERC-20 token${erc20Count === 1 ? "" : "s"} with a balance.`
+    : " (no ERC-20 balances found on the public explorer).";
+  note += " No funds were moved.";
+  if (assetRecord.erc20Warning) note += ` ${assetRecord.erc20Warning}`;
   ui.linkedAssetNote.textContent = note;
   ui.dialogAssetNote.textContent = note;
 }
@@ -963,7 +972,13 @@ function renderTokenList(list, tokens) {
   for (const token of tokens) {
     const row = document.createElement("div");
     const label = document.createElement("dt");
-    const standard = token.standard === "TRC10" ? "TRC-10" : token.standard === "TRC20" ? "TRC-20" : token.standard || "Token";
+    const standard = token.standard === "TRC10"
+      ? "TRC-10"
+      : token.standard === "TRC20"
+        ? "TRC-20"
+        : token.standard === "ERC20"
+          ? "ERC-20"
+          : token.standard || "Token";
     const symbol = token.symbol || standard;
     label.textContent = token.standard && token.standard !== "TRX" ? `${symbol} (${standard})` : symbol;
     label.title = token.name || symbol;

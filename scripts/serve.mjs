@@ -471,7 +471,10 @@ async function handlePublicEvmWalletAssets(request, response, url) {
     sendJson(response, 400, { ok: false, error: "The EVM chain id is invalid." });
     return;
   }
-  const assets = await fetchEvmWalletAssets(address, chainId, { rpcUrl: process.env.EVM_RPC_URL });
+  const assets = await fetchEvmWalletAssets(address, chainId, {
+    rpcUrl: process.env.EVM_RPC_URL,
+    explorerUrl: process.env.EVM_EXPLORER_URL,
+  });
   if (!assets.ok) {
     sendJson(response, 502, { ok: false, error: assets.error });
     return;
@@ -485,6 +488,7 @@ async function handlePublicEvmWalletAssets(request, response, url) {
       nativeDisplay: assets.nativeDisplay,
       nativeSymbol: assets.nativeSymbol,
       nativeUnits: assets.nativeUnits,
+      erc20Warning: assets.erc20Warning,
       tokens: assets.tokens,
     },
   });

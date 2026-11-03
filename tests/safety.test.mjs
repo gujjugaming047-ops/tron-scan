@@ -44,7 +44,10 @@ describe("source safety", () => {
     assert.equal(/triggerSmartContract|sendRawTransaction|\.sign\(/.test(landing), false);
     assert.match(landing, /\/api\/auth\/session/);
     assert.match(landing, /\/api\/public\/wallet-assets\?address=/);
+    assert.match(landing, /native \+ ERC-20/);
     assert.match(landing, /\/api\/public\/evm-wallet-assets\?/);
+    const evmPublic = readFileSync(path.join(root, "src/evm-public.mjs"), "utf8");
+    assert.match(evmPublic, /fetchBlockscoutErc20Balances/);
     assert.match(landing, /loadVerifiedWalletAssets\(session, \{ scrollIntoView: false \}\)/);
     assert.match(html, /src="\.\/src\/landing\.js\?v=/);
     assert.match(html, /getElementById\("wallet-dialog"\)/);
