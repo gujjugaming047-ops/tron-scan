@@ -121,9 +121,43 @@ describe("wallet authentication API", () => {
     assert.equal(response.status, 403);
   });
 
-  it("rejects auth requests without an Origin header", async () => {
+  it("falls back to the Host header when Origin is missing on loopback", async () => {
     const response = await fetch(`${base}/api/auth/nonce`);
-    assert.equal(response.status, 403);
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.domain, new URL(base).host);
+  });
+
+  it("accepts a tunnel Origin when Host points at the local preview server", async () => {
+    const tunnelOrigin = "https://surround-agent-mattress-gets.trycloudflare.com";
+    const localHost = new URL(base).host;
+    const headers = { Origin: tunnelOrigin, Host: localHost };
+    const nonceResponse = await fetch(`${base}/api/auth/nonce`, { headers });
+    assert.equal(nonceResponse.status, 200);
+    const nonce = await nonceResponse.json();
+    assert.equal(nonce.domain, "surround-agent-mattress-gets.trycloudflare.com");
+    assert.equal(nonce.uri, `${tunnelOrigin}/`);
+    const account = tronUtils.accounts.generateAccount();
+    const issuedAt = new Date();
+    const message = createSignInMessage({
+      domain: nonce.domain,
+      address: account.address.base58,
+      uri: nonce.uri,
+      network: "tron",
+      walletId: "walletconnect",
+      chainId: "0x2b6653dc",
+      nonce: nonce.nonce,
+      issuedAt: issuedAt.toISOString(),
+      expirationTime: new Date(issuedAt.getTime() + 4 * 60 * 1000).toISOString(),
+    });
+    const signature = tronUtils.message.signMessage(message, account.privateKey);
+    const verification = await fetch(`${base}/api/auth/verify`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ message, signature }),
+    });
+    assert.equal(verification.status, 200);
+    assert.equal((await verification.json()).session.connectionTarget, CONNECTION_TARGET);
   });
 
   it("uses the browser Origin for sign-in even when PUBLIC_ORIGIN differs", async () => {

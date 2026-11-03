@@ -488,13 +488,28 @@ export function isConfiguredSignInHostname(configuredOrigin, hostname) {
 }
 
 /**
- * Resolve the domain and URI pinned into login messages from the browser request.
- * @param {unknown} originHeader
  * @param {unknown} hostHeader
- * @param {unknown} [configuredOrigin]
+ */
+export function hostnameFromHostHeader(hostHeader) {
+  if (typeof hostHeader !== "string" || hostHeader.trim().length === 0) return "";
+  const host = hostHeader.split(",")[0].trim().toLowerCase();
+  if (host.startsWith("[")) {
+    const end = host.indexOf("]");
+    return end === -1 ? "" : host.slice(1, end);
+  }
+  const portIndex = host.lastIndexOf(":");
+  if (portIndex === -1) return host;
+  const maybePort = host.slice(portIndex + 1);
+  if (/^\d+$/.test(maybePort)) return host.slice(0, portIndex);
+  return host;
+}
+
+/**
+ * @param {unknown} originHeader
+ * @param {unknown} configuredOrigin
  * @returns {{ domain: string, uri: string, secure: boolean } | null}
  */
-export function signInRequestContext(originHeader, hostHeader, configuredOrigin = "") {
+function signInContextFromOrigin(originHeader, configuredOrigin) {
   if (typeof originHeader !== "string" || originHeader.length === 0 || originHeader.length > 2048) return null;
   if (/\s/.test(originHeader)) return null;
   let parsed;
@@ -505,20 +520,59 @@ export function signInRequestContext(originHeader, hostHeader, configuredOrigin 
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
   if (!parsed.host || parsed.username || parsed.password) return null;
-  const hostname = parsed.hostname;
   const configured = typeof configuredOrigin === "string" ? configuredOrigin.trim() : "";
-  const allowed = isAllowedSignInHostname(hostname)
-    || isConfiguredSignInHostname(configured, hostname);
+  const allowed = isAllowedSignInHostname(parsed.hostname)
+    || isConfiguredSignInHostname(configured, parsed.hostname);
   if (!allowed) return null;
-  if (typeof hostHeader === "string" && hostHeader.length > 0
-    && parsed.host.toLowerCase() !== hostHeader.toLowerCase()) {
-    return null;
-  }
   return {
     domain: parsed.host,
     uri: `${parsed.origin}/`,
     secure: parsed.protocol === "https:",
   };
+}
+
+/**
+ * @param {unknown} hostHeader
+ * @param {unknown} configuredOrigin
+ * @param {unknown} [protocolHint]
+ */
+function signInContextFromHost(hostHeader, configuredOrigin, protocolHint = "") {
+  if (typeof hostHeader !== "string" || hostHeader.trim().length === 0) return null;
+  const host = hostHeader.split(",")[0].trim();
+  const hostname = hostnameFromHostHeader(host);
+  const configured = typeof configuredOrigin === "string" ? configuredOrigin.trim() : "";
+  const allowed = isAllowedSignInHostname(hostname)
+    || isConfiguredSignInHostname(configured, hostname);
+  if (!allowed) return null;
+  const proto = typeof protocolHint === "string" && protocolHint.toLowerCase() === "https" ? "https" : "http";
+  const normalizedHost = host.toLowerCase();
+  return {
+    domain: normalizedHost,
+    uri: `${proto}://${normalizedHost}/`,
+    secure: proto === "https",
+  };
+}
+
+/**
+ * Resolve the domain and URI pinned into login messages from the browser request.
+ * @param {unknown} originHeader
+ * @param {unknown} hostHeader
+ * @param {unknown} [configuredOrigin]
+ * @param {{ forwardedHost?: unknown, forwardedProto?: unknown }} [proxy]
+ * @returns {{ domain: string, uri: string, secure: boolean } | null}
+ */
+export function signInRequestContext(originHeader, hostHeader, configuredOrigin = "", proxy = {}) {
+  const hasOrigin = typeof originHeader === "string" && originHeader.trim().length > 0;
+  if (hasOrigin) {
+    return signInContextFromOrigin(originHeader, configuredOrigin);
+  }
+  const forwardedHost = typeof proxy.forwardedHost === "string" ? proxy.forwardedHost : "";
+  const forwardedProto = typeof proxy.forwardedProto === "string" ? proxy.forwardedProto : "";
+  if (forwardedHost) {
+    const fromForwarded = signInContextFromHost(forwardedHost, configuredOrigin, forwardedProto);
+    if (fromForwarded) return fromForwarded;
+  }
+  return signInContextFromHost(hostHeader, configuredOrigin, forwardedProto);
 }
 
 /**

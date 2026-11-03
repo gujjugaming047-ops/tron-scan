@@ -487,7 +487,12 @@ function readOwnerSession(request) {
 function requestContext(request) {
   const originHeader = typeof request.headers.origin === "string" ? request.headers.origin : "";
   const host = typeof request.headers.host === "string" ? request.headers.host : "";
-  return signInRequestContext(originHeader, host, process.env.PUBLIC_ORIGIN || "");
+  const forwardedHost = typeof request.headers["x-forwarded-host"] === "string" ? request.headers["x-forwarded-host"] : "";
+  const forwardedProto = typeof request.headers["x-forwarded-proto"] === "string" ? request.headers["x-forwarded-proto"] : "";
+  return signInRequestContext(originHeader, host, process.env.PUBLIC_ORIGIN || "", {
+    forwardedHost,
+    forwardedProto,
+  });
 }
 
 /**

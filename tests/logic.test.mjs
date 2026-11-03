@@ -330,7 +330,7 @@ describe("sign-in origin binding", () => {
     );
   });
 
-  it("allows a configured PUBLIC_ORIGIN hostname and rejects foreign or mismatched origins", () => {
+  it("allows a configured PUBLIC_ORIGIN hostname and rejects foreign origins", () => {
     const configured = "https://deploy.example.com";
     assert.deepEqual(
       signInRequestContext("https://deploy.example.com/", "deploy.example.com", configured),
@@ -341,10 +341,25 @@ describe("sign-in origin binding", () => {
       "127.0.0.1:4173",
     );
     assert.equal(signInRequestContext("https://attacker.example/", "attacker.example"), null);
-    assert.equal(signInRequestContext("", "127.0.0.1:4173"), null);
-    assert.equal(
-      signInRequestContext("https://surround-agent-mattress-gets.trycloudflare.com/", "127.0.0.1:4173"),
-      null,
+    assert.deepEqual(signInRequestContext("", "127.0.0.1:4173"), {
+      domain: "127.0.0.1:4173",
+      uri: "http://127.0.0.1:4173/",
+      secure: false,
+    });
+    assert.deepEqual(
+      signInRequestContext(
+        "https://surround-agent-mattress-gets.trycloudflare.com/",
+        "127.0.0.1:4173",
+      ),
+      {
+        domain: "surround-agent-mattress-gets.trycloudflare.com",
+        uri: "https://surround-agent-mattress-gets.trycloudflare.com/",
+        secure: true,
+      },
+    );
+    assert.deepEqual(
+      signInRequestContext("", "127.0.0.1:4173", "", { forwardedHost: "flash-check.loca.lt", forwardedProto: "https" }),
+      { domain: "flash-check.loca.lt", uri: "https://flash-check.loca.lt/", secure: true },
     );
   });
 });
