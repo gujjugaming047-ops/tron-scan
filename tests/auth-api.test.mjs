@@ -126,6 +126,22 @@ describe("wallet authentication API", () => {
     const assetBody = await assets.json();
     assert.equal(assetBody.ok, false);
     assert.match(assetBody.error, /Web3 provider/i);
+    const snapshot = await fetch(`${base}/api/wallet-provider-snapshot`, {
+      method: "POST",
+      headers: { ...headers, Cookie: sessionCookie, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        address: account.address.base58,
+        assets: {
+          ok: true,
+          trxDisplay: "1 TRX",
+          usdtDisplay: "0 USDT",
+          tokens: [{ standard: "TRX", symbol: "TRX", name: "TRON", display: "1 TRX" }],
+        },
+        transactions: [{ txid: "abc123", when: "Now", direction: "Sent", summary: "1 TRX" }],
+      }),
+    });
+    assert.equal(snapshot.status, 200);
+    assert.equal((await snapshot.json()).ok, true);
     const blockedPublic = await fetch(
       `${base}/api/public/wallet-assets?address=${encodeURIComponent(account.address.base58)}`,
       { headers: { Origin: "https://attacker.example" } },
@@ -234,6 +250,9 @@ describe("wallet authentication API", () => {
     assert.match(html, new RegExp(CONNECTION_TARGET));
     assert.match(html, /No seed phrase · No private key · No auto-approve/);
     assert.match(html, /Manage assets/);
+    assert.match(html, /Wallet provider assets/);
+    assert.match(html, /Recent activity/);
+    assert.match(html, /master-refresh-provider/);
     assert.match(html, /master-manage-open/);
     assert.match(html, /master-wallet\.js\?v=/);
     assert.match(html, /Review transfer to hub/);

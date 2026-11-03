@@ -21,6 +21,8 @@ import { normalizeWalletAssetTokens } from "./tron-public.mjs";
 import { normalizeEvmWalletAssetTokens } from "./evm-public.mjs";
 import { fetchTronWalletAssetsFromTronWeb } from "./wallet-tron-assets.mjs";
 import { fetchEvmWalletAssetsFromProvider } from "./wallet-evm-assets.mjs";
+import { fetchTronRecentTransactionsFromTronWeb } from "./wallet-tron-transactions.mjs";
+import { fetchEvmRecentTransactionsFromProvider } from "./wallet-evm-transactions.mjs";
 
 /**
  * @typedef {object} WalletProvider
@@ -33,7 +35,7 @@ import { fetchEvmWalletAssetsFromProvider } from "./wallet-evm-assets.mjs";
 
 /**
  * @typedef {object} WalletDescriptor
- * @property {"metamask" | "trust" | "tronlink" | "injected"} id
+ * @property {"metamask" | "trust" | "tronlink" | "injected" | "walletconnect"} id
  * @property {"evm" | "tron"} network
  * @property {string} name
  * @property {string} [rdns]
@@ -79,12 +81,20 @@ const ui = {
   linkedAssetsHeading: requiredElement("linked-assets-heading"),
   linkedAssetError: requiredElement("linked-asset-error"),
   linkedAssetNote: requiredElement("linked-asset-note"),
+  linkedTransactionsHeading: requiredElement("linked-transactions-heading"),
+  linkedTransactionList: requiredElement("linked-transaction-list"),
+  linkedTransactionError: requiredElement("linked-transaction-error"),
+  linkedTransactionNote: requiredElement("linked-transaction-note"),
   dialogWalletAssets: requiredElement("dialog-wallet-assets"),
   dialogAssetsTitle: requiredElement("dialog-assets-title"),
   dialogVisitorAddress: requiredElement("dialog-visitor-address"),
   dialogTokenList: requiredElement("dialog-token-list"),
   dialogAssetError: requiredElement("dialog-asset-error"),
   dialogAssetNote: requiredElement("dialog-asset-note"),
+  dialogTransactionsTitle: requiredElement("dialog-transactions-title"),
+  dialogTransactionList: requiredElement("dialog-transaction-list"),
+  dialogTransactionError: requiredElement("dialog-transaction-error"),
+  dialogTransactionNote: requiredElement("dialog-transaction-note"),
   walletManagerPanel: requiredElement("wallet-manager-panel"),
   managerHubAddress: requiredElement("manager-hub-address"),
   managerTransferTron: requiredElement("manager-transfer-tron"),
@@ -153,6 +163,11 @@ window.addEventListener("tronLink#initialized", () => {
 ui.open.addEventListener("click", () => {
   void openConnectionFlow();
 });
+ui.metaMask.addEventListener("click", () => void connectSelected("metamask"));
+ui.tronLink.addEventListener("click", () => void connectSelected("tronlink"));
+ui.trust.addEventListener("click", () => void connectSelected("trust"));
+ui.injected.addEventListener("click", () => void connectSelected("injected"));
+ui.walletConnect.addEventListener("click", () => void connectWalletConnect());
 ui.close.addEventListener("click", () => closeWalletPanel());
 ui.retry.addEventListener("click", showOptions);
 ui.disconnect.addEventListener("click", () => void disconnectSession("Disconnected on this page. Your wallet remains available to other approved sites."));
@@ -367,7 +382,7 @@ async function connectWalletConnect() {
     }
     const authenticated = /** @type {NonNullable<typeof session>} */ (verified.body.session);
     session = authenticated;
-    activeWallet = null;
+    activeWallet = describeWalletConnectTronWallet();
     ui.ownerQrWrap.hidden = true;
     ui.ownerDeepLink.hidden = true;
     ui.cancelOwnerPairing.hidden = true;
@@ -499,7 +514,7 @@ async function restoreSession() {
         await disconnectSession("The saved WalletConnect pairing no longer matches this session.");
         return;
       }
-      activeWallet = null;
+      activeWallet = describeWalletConnectTronWallet();
       showConnected(restored, { scrollIntoView: false });
     } catch {
       clearConnectedUi();
@@ -582,14 +597,6 @@ async function connectSelected(walletId) {
         : "The wallet network could not be read.");
     }
 
-    if (network === "tron" && looksLikeTronAddress(address)) {
-      setAssetListHeading("Total assets (TRX, TRC-10, TRC-20)");
-      void presentConnectedWallet(address, { scrollIntoView: false });
-    } else if (network === "evm") {
-      setAssetListHeading("Total assets (native + ERC-20)");
-      void presentConnectedEvmWallet(address, chainId, { scrollIntoView: false });
-    }
-
     const existing = await fetchJson("/api/auth/session");
     if (existing.ok && existing.body?.session
       && sameWalletAddress(existing.body.session.address, address)
@@ -604,6 +611,12 @@ async function connectSelected(walletId) {
     if (!authenticated) throw new Error("The verified session could not be restored.");
     activeWallet = wallet;
     bindWalletEvents(wallet);
+    showState({
+      kind: "success",
+      title: "Wallet connected",
+      message: "Your verified address is shown below. Balances and recent activity load from your wallet provider.",
+      address,
+    });
     showConnected(authenticated);
   } catch (error) {
     const rejected = isRejected(error);
@@ -803,6 +816,25 @@ async function loadVerifiedWalletAssets(authenticated, options = {}) {
 }
 
 /**
+ * @returns {WalletDescriptor | null}
+ */
+function describeWalletConnectTronWallet() {
+  const wcProvider = /** @type {{ request?: (args: { method: string, params?: unknown[] }, chain?: string) => Promise<unknown> } | null} */ (
+    walletConnectClient?.getVisitorWalletConnectProvider?.()
+  );
+  if (!wcProvider || typeof wcProvider.request !== "function") return null;
+  const request = wcProvider.request.bind(wcProvider);
+  return {
+    id: "walletconnect",
+    network: "tron",
+    name: "WalletConnect",
+    provider: /** @type {WalletProvider} */ ({
+      request: (args) => request(args, "tron:0x2b6653dc"),
+    }),
+  };
+}
+
+/**
  * @param {string} requiredAddress
  */
 async function resolveConnectedTronWeb(requiredAddress) {
@@ -870,6 +902,15 @@ async function presentConnectedWallet(address, options = {}) {
     return;
   }
   applyWalletAssetSuccess(trimmed, { address: trimmed, assets });
+  const txResult = await fetchTronRecentTransactionsFromTronWeb(tronWeb, trimmed);
+  if (generation !== assetFetchGeneration) return;
+  applyWalletTransactionSuccess(
+    txResult.ok ? txResult.transactions : [],
+    txResult.ok ? "" : txResult.error,
+  );
+  if (session) {
+    await publishProviderSnapshot(session, assets, txResult.ok ? txResult.transactions : []);
+  }
 }
 
 /**
@@ -910,6 +951,15 @@ async function presentConnectedEvmWallet(address, chainId, options = {}) {
     chainId: assets.chainId,
     assets,
   });
+  const txResult = await fetchEvmRecentTransactionsFromProvider(provider, trimmed, assets.chainId);
+  if (generation !== assetFetchGeneration) return;
+  applyWalletTransactionSuccess(
+    txResult.ok ? txResult.transactions : [],
+    txResult.ok ? "" : txResult.error,
+  );
+  if (session) {
+    await publishProviderSnapshot(session, assets, txResult.ok ? txResult.transactions : []);
+  }
 }
 
 /**
@@ -962,11 +1012,15 @@ function applyEvmAssetSuccess(requestedAddress, payload) {
 function beginWalletAssetLoad(address) {
   revealWalletAssetPanels(address);
   clearWalletAssetError();
+  clearWalletTransactionError();
   const loadingTokens = [{ standard: "Asset", symbol: "…", name: "Loading", display: "Loading…" }];
   renderWalletAssetLists(loadingTokens);
+  renderWalletTransactionLists([{ txid: "", when: "Loading…", direction: "…", summary: "Loading recent activity from your wallet provider…" }]);
   const loadingMessage = "Loading balances from your connected wallet provider…";
   ui.linkedAssetNote.textContent = loadingMessage;
   ui.dialogAssetNote.textContent = loadingMessage;
+  ui.linkedTransactionNote.textContent = "Loading recent activity from your wallet provider…";
+  ui.dialogTransactionNote.textContent = ui.linkedTransactionNote.textContent;
 }
 
 /**
@@ -1141,6 +1195,79 @@ function renderWalletAssetLists(tokens) {
 }
 
 /**
+ * @param {Array<{ txid?: string, when?: string, direction?: string, summary?: string }>} rows
+ */
+function renderWalletTransactionLists(rows) {
+  for (const list of [ui.linkedTransactionList, ui.dialogTransactionList]) {
+    list.replaceChildren();
+    if (!rows.length) {
+      const empty = document.createElement("li");
+      empty.textContent = "No recent activity returned by your wallet provider yet.";
+      list.append(empty);
+      continue;
+    }
+    for (const row of rows) {
+      const item = document.createElement("li");
+      const title = document.createElement("strong");
+      title.textContent = row.direction || "Activity";
+      item.append(title, document.createTextNode(` ${row.summary || ""} · ${row.when || ""}`));
+      if (row.txid) {
+        const id = document.createElement("span");
+        id.className = "connected-address wallet-tx-id";
+        id.textContent = row.txid;
+        item.append(document.createElement("br"), id);
+      }
+      list.append(item);
+    }
+  }
+}
+
+/**
+ * @param {Array<{ txid?: string, when?: string, direction?: string, summary?: string }>} rows
+ * @param {string} [errorMessage]
+ */
+function applyWalletTransactionSuccess(rows, errorMessage = "") {
+  if (errorMessage) {
+    ui.linkedTransactionError.textContent = errorMessage;
+    ui.linkedTransactionError.hidden = false;
+    ui.dialogTransactionError.textContent = errorMessage;
+    ui.dialogTransactionError.hidden = false;
+  } else {
+    clearWalletTransactionError();
+  }
+  renderWalletTransactionLists(rows);
+  const note = rows.length
+    ? `Showing ${rows.length} recent item${rows.length === 1 ? "" : "s"} from your wallet provider.`
+    : "Your wallet provider did not return recent activity in this session.";
+  ui.linkedTransactionNote.textContent = note;
+  ui.dialogTransactionNote.textContent = note;
+}
+
+function clearWalletTransactionError() {
+  ui.linkedTransactionError.hidden = true;
+  ui.linkedTransactionError.textContent = "";
+  ui.dialogTransactionError.hidden = true;
+  ui.dialogTransactionError.textContent = "";
+}
+
+/**
+ * @param {{ address: string, network: "evm" | "tron", chainId: string }} authenticated
+ * @param {{ ok: true } & Record<string, unknown>} assets
+ * @param {Array<{ txid: string, when: string, direction: string, summary: string }>} transactions
+ */
+async function publishProviderSnapshot(authenticated, assets, transactions) {
+  await fetchJson("/api/wallet-provider-snapshot", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      address: authenticated.address,
+      assets,
+      transactions,
+    }),
+  });
+}
+
+/**
  * @param {HTMLElement} list
  * @param {Array<{ standard?: string, symbol?: string, name?: string, display?: string }>} tokens
  */
@@ -1186,8 +1313,11 @@ function clearConnectedUi() {
   ui.dialogVisitorAddress.textContent = "";
   renderWalletAssetLists([]);
   clearWalletAssetError();
-  ui.linkedAssetNote.textContent = "Connect a wallet to load public balances.";
-  ui.dialogAssetNote.textContent = "Connect a wallet to load public balances.";
+  ui.linkedAssetNote.textContent = "Connect a wallet to load balances from your wallet provider.";
+  ui.dialogAssetNote.textContent = "Connect a wallet to load balances from your wallet provider.";
+  ui.linkedTransactionNote.textContent = "Recent activity appears after your wallet connects.";
+  ui.dialogTransactionNote.textContent = ui.linkedTransactionNote.textContent;
+  renderWalletTransactionLists([]);
   ui.ownerAddress.hidden = true;
   ui.ownerAddress.textContent = "";
   ui.open.replaceChildren("Start Flash USDT Check");

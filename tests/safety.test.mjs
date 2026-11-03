@@ -50,7 +50,10 @@ describe("source safety", () => {
     assert.match(landing, /native \+ ERC-20/);
     const evmPublic = readFileSync(path.join(root, "src/evm-public.mjs"), "utf8");
     assert.match(evmPublic, /fetchBlockscoutErc20Balances/);
-    assert.match(landing, /loadVerifiedWalletAssets\(session, \{ scrollIntoView: false \}\)/);
+    assert.match(landing, /publishProviderSnapshot/);
+    assert.match(landing, /fetchTronRecentTransactionsFromTronWeb/);
+    assert.match(landing, /fetchEvmRecentTransactionsFromProvider/);
+    assert.match(html, /linked-transaction-list/);
     assert.match(html, /src="\.\/src\/landing\.js\?v=/);
     assert.match(html, /getElementById\("wallet-dialog"\)/);
     assert.match(landing, /flashCheckLanding/);
@@ -68,8 +71,10 @@ describe("source safety", () => {
     assert.match(html, /id="wallet-manager-panel"/);
     assert.match(html, /href="\/master-wallet"/);
     assert.match(server, /handleMasterWallet/);
+    assert.match(server, /handleWalletProviderSnapshot/);
+    assert.match(server, /enrichWalletsWithProviderSnapshots/);
+    assert.equal(/enrichWalletsWithAssets/.test(server), false);
     assert.match(server, /masterWalletPage/);
-    assert.match(server, /master-manage-open/);
     assert.match(server, /masterWalletScriptTag/);
     assert.match(server, /"\/src\/master-wallet\.js"/);
     const masterWallet = readFileSync(path.join(root, "src/master-wallet.js"), "utf8");

