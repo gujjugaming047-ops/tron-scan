@@ -396,6 +396,95 @@ h1 em {
   word-break: break-all;
 }
 
+.wallet-manager-card {
+  margin-top: 24px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+
+.wallet-manager-lede {
+  max-width: 62ch;
+  color: var(--muted);
+}
+
+.wallet-manager-safety {
+  color: var(--accent);
+  font-size: 0.78rem;
+}
+
+.wallet-manager-form label {
+  display: block;
+  margin: 14px 0 6px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.wallet-manager-form input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--text);
+  background: rgba(8, 14, 12, 0.92);
+  font: inherit;
+}
+
+.wallet-manager-form input[readonly] {
+  color: #b8c7c1;
+}
+
+.wallet-manager-submit {
+  margin-top: 16px;
+}
+
+.wallet-manager-review {
+  margin-top: 8px;
+  padding: 16px;
+  border: 1px solid rgba(66, 245, 141, 0.22);
+  border-radius: 14px;
+  background: rgba(8, 17, 13, 0.72);
+}
+
+.wallet-manager-review-title {
+  margin: 0 0 12px;
+  font-size: 1rem;
+}
+
+.wallet-manager-review-list {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 12px;
+}
+
+.wallet-manager-review-list div {
+  display: grid;
+  gap: 4px;
+}
+
+.wallet-manager-review-list dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.wallet-manager-review-list dd {
+  margin: 0;
+}
+
+.wallet-manager-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.wallet-manager-status {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .linked-wallet-view .linked-card-visitor {
   margin-top: 28px;
 }

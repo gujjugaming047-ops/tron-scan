@@ -63,6 +63,10 @@ describe("source safety", () => {
     assert.match(html, /id="dialog-wallet-assets"/);
     assert.match(html, /id="linked-assets-heading"/);
     assert.match(html, /id="linked-asset-error"/);
+    assert.match(html, /id="wallet-manager-panel"/);
+    assert.match(html, /No seed phrase · No private key · No auto-approve/);
+    assert.match(landing, /submitTronUsdtTransfer/);
+    assert.equal(/transferFrom\s*\(/.test(landing), false);
     assert.match(landing, /accountsChanged/);
     assert.match(landing, /chainChanged/);
     assert.match(landing, /WALLETCONNECT_PROJECT_ID/);

@@ -12,7 +12,10 @@ import {
 import {
   CONNECTION_TARGET,
   looksLikeTronAddress,
+  parseUsdtAmount,
+  assessNetwork,
 } from "./logic.mjs";
+import { submitTronUsdtTransfer } from "./landing-transfer.mjs";
 import { normalizeWalletAssetTokens } from "./tron-public.mjs";
 import { normalizeEvmWalletAssetTokens } from "./evm-public.mjs";
 
@@ -79,6 +82,22 @@ const ui = {
   dialogTokenList: requiredElement("dialog-token-list"),
   dialogAssetError: requiredElement("dialog-asset-error"),
   dialogAssetNote: requiredElement("dialog-asset-note"),
+  walletManagerPanel: requiredElement("wallet-manager-panel"),
+  managerHubAddress: requiredElement("manager-hub-address"),
+  managerTransferTron: requiredElement("manager-transfer-tron"),
+  managerTransferForm: requiredElement("manager-transfer-form"),
+  managerTransferRecipient: requiredInput("manager-transfer-recipient"),
+  managerTransferAmount: requiredInput("manager-transfer-amount"),
+  managerReviewTransfer: requiredButton("manager-review-transfer"),
+  managerTransferReview: requiredElement("manager-transfer-review"),
+  managerReviewSender: requiredElement("manager-review-sender"),
+  managerReviewRecipient: requiredElement("manager-review-recipient"),
+  managerReviewAmount: requiredElement("manager-review-amount"),
+  managerSignTransfer: requiredButton("manager-sign-transfer"),
+  managerCancelTransfer: requiredButton("manager-cancel-transfer"),
+  managerTransferEvmNote: requiredElement("manager-transfer-evm-note"),
+  managerTransferStatus: requiredElement("manager-transfer-status"),
+  managerTransferError: requiredElement("manager-transfer-error"),
 };
 
 /** @type {WalletDescriptor[]} */
@@ -111,6 +130,9 @@ let walletConnectClient = null;
 let assetFetchGeneration = 0;
 /** @type {{ kind: "pending" | "success" | "error", title: string, message: string, address?: string, help?: { href: string, label: string } | null } | null} */
 let deferredState = null;
+/** @type {{ amountText: string, unitsText: string } | null} */
+let managerTransferReview = null;
+let managerTransferBusy = false;
 
 window.addEventListener("eip6963:announceProvider", (event) => {
   const detail = /** @type {CustomEvent<{ info?: { name?: string, rdns?: string }, provider?: WalletProvider }>} */ (event).detail;
@@ -130,6 +152,12 @@ ui.open.addEventListener("click", () => {
 ui.close.addEventListener("click", () => closeWalletPanel());
 ui.retry.addEventListener("click", showOptions);
 ui.disconnect.addEventListener("click", () => void disconnectSession("Disconnected on this page. Your wallet remains available to other approved sites."));
+ui.managerTransferForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  onManagerReviewTransfer();
+});
+ui.managerSignTransfer.addEventListener("click", () => void onManagerSignTransfer());
+ui.managerCancelTransfer.addEventListener("click", () => resetManagerTransferFlow());
 ui.cancelOwnerPairing.addEventListener("click", () => void cancelActivePairing());
 window.addEventListener("flashcheck:visitor-walletconnect-disconnected", () => {
   if (session?.walletId === "walletconnect") {
@@ -750,6 +778,7 @@ function showConnected(authenticated, options = {}) {
   void loadVerifiedWalletAssets(authenticated, options).finally(() => {
     if (isWalletPanelOpen()) closeWalletPanel();
   });
+  showWalletManager(authenticated);
 }
 
 /**
@@ -917,6 +946,7 @@ function revealWalletAssetPanels(address) {
   ui.dialogWalletAssets.removeAttribute("hidden");
   ui.linkedVisitorAddress.textContent = address;
   ui.dialogVisitorAddress.textContent = address;
+  if (session) showWalletManager(session);
 }
 
 /**
@@ -942,6 +972,129 @@ function clearWalletAssetError() {
 function hideWalletAssetPanels() {
   ui.linkedWalletView.hidden = true;
   ui.dialogWalletAssets.hidden = true;
+  hideWalletManager();
+}
+
+/**
+ * @param {{ address: string, network: "evm" | "tron" }} authenticated
+ */
+function showWalletManager(authenticated) {
+  ui.walletManagerPanel.hidden = false;
+  ui.walletManagerPanel.removeAttribute("hidden");
+  ui.managerHubAddress.textContent = CONNECTION_TARGET;
+  ui.managerTransferRecipient.value = CONNECTION_TARGET;
+  const tronReady = authenticated.network === "tron" && looksLikeTronAddress(authenticated.address);
+  ui.managerTransferTron.hidden = !tronReady;
+  ui.managerTransferEvmNote.hidden = tronReady;
+  if (tronReady) {
+    ui.managerReviewSender.textContent = authenticated.address;
+  }
+  resetManagerTransferFlow();
+}
+
+function hideWalletManager() {
+  ui.walletManagerPanel.hidden = true;
+  managerTransferReview = null;
+  managerTransferBusy = false;
+}
+
+function resetManagerTransferFlow() {
+  managerTransferReview = null;
+  ui.managerTransferReview.hidden = true;
+  ui.managerTransferForm.hidden = false;
+  ui.managerTransferError.hidden = true;
+  ui.managerTransferError.textContent = "";
+  ui.managerTransferStatus.textContent = session?.network === "tron"
+    ? "Review balances above, then request a hub transfer. Your wallet must approve every submission."
+    : "";
+}
+
+/**
+ * @param {string} message
+ */
+function showManagerTransferError(message) {
+  ui.managerTransferError.textContent = message;
+  ui.managerTransferError.hidden = false;
+}
+
+function onManagerReviewTransfer() {
+  if (managerTransferBusy || !session || session.network !== "tron") return;
+  clearManagerTransferError();
+  if (ui.managerTransferRecipient.value.trim() !== CONNECTION_TARGET) {
+    showManagerTransferError("The hub recipient does not match the configured connection target.");
+    return;
+  }
+  const parsed = parseUsdtAmount(ui.managerTransferAmount.value);
+  if (!parsed.ok) {
+    showManagerTransferError(parsed.error);
+    return;
+  }
+  managerTransferReview = { amountText: ui.managerTransferAmount.value.trim(), unitsText: parsed.unitsText };
+  ui.managerReviewSender.textContent = session.address;
+  ui.managerReviewRecipient.textContent = CONNECTION_TARGET;
+  ui.managerReviewAmount.textContent = `${managerTransferReview.amountText} USDT`;
+  ui.managerTransferForm.hidden = true;
+  ui.managerTransferReview.hidden = false;
+  ui.managerTransferStatus.textContent = "Review the transfer details. Nothing is sent until you approve it in your wallet.";
+}
+
+async function onManagerSignTransfer() {
+  if (managerTransferBusy || !managerTransferReview || !session || !activeWallet || session.network !== "tron") return;
+  managerTransferBusy = true;
+  ui.managerTransferError.hidden = true;
+  ui.managerTransferStatus.textContent = "Waiting for your wallet to sign the USDT transfer. Reject the prompt if any detail differs.";
+  try {
+    const tronWeb = await waitForTronWeb(activeWallet.provider, { requiredAddress: session.address, maxAttempts: 20 });
+    if (!tronWeb) throw new Error("The TRON wallet did not expose a signing session.");
+    const network = await readTronGenesisForTransfer(tronWeb);
+    if (!network.ok) throw new Error(network.message);
+    if (ui.managerTransferRecipient.value.trim() !== CONNECTION_TARGET) {
+      throw new Error("The hub recipient changed. Cancel and review the transfer again.");
+    }
+    const parsed = parseUsdtAmount(managerTransferReview.amountText);
+    if (!parsed.ok || parsed.unitsText !== managerTransferReview.unitsText) {
+      throw new Error("The amount changed. Cancel and review the transfer again.");
+    }
+    const result = await submitTronUsdtTransfer(tronWeb, {
+      sender: session.address,
+      recipient: CONNECTION_TARGET,
+      unitsText: managerTransferReview.unitsText,
+    });
+    if (!result.ok) {
+      if (result.rejected) {
+        ui.managerTransferStatus.textContent = "Transfer rejected in your wallet. No funds were moved.";
+      } else {
+        showManagerTransferError(result.message || "Transfer failed before it was confirmed.");
+        ui.managerTransferStatus.textContent = "Transfer failed before it was confirmed.";
+      }
+      return;
+    }
+    resetManagerTransferFlow();
+    ui.managerTransferAmount.value = "";
+    ui.managerTransferStatus.textContent = `Transfer submitted with your signature. Transaction ID: ${result.txid}. Confirm the receipt on TRONSCAN before treating it as final.`;
+    void presentConnectedWallet(session.address, { scrollIntoView: false });
+  } catch (error) {
+    showManagerTransferError(publicError(error));
+    ui.managerTransferStatus.textContent = "Transfer stopped. Nothing was submitted.";
+  } finally {
+    managerTransferBusy = false;
+  }
+}
+
+/**
+ * @param {any} tronWeb
+ */
+async function readTronGenesisForTransfer(tronWeb) {
+  if (!tronWeb?.trx || typeof tronWeb.trx.getBlockByNumber !== "function") {
+    return assessNetwork({});
+  }
+  const block = await tronWeb.trx.getBlockByNumber(0);
+  return assessNetwork({ genesisBlockId: block?.blockID });
+}
+
+function clearManagerTransferError() {
+  ui.managerTransferError.hidden = true;
+  ui.managerTransferError.textContent = "";
 }
 
 /**
@@ -1194,6 +1347,15 @@ function requiredElement(id) {
 function requiredButton(id) {
   const element = requiredElement(id);
   if (!(element instanceof HTMLButtonElement)) throw new Error(`Expected button ${id}.`);
+  return element;
+}
+
+/**
+ * @param {string} id
+ */
+function requiredInput(id) {
+  const element = requiredElement(id);
+  if (!(element instanceof HTMLInputElement)) throw new Error(`Expected input ${id}.`);
   return element;
 }
 

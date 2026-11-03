@@ -27,6 +27,7 @@ const allowed = new Map([
   ["/generated/walletconnect-client.js", "text/javascript; charset=utf-8"],
   ["/src/app.js", "text/javascript; charset=utf-8"],
   ["/src/landing.js", "text/javascript; charset=utf-8"],
+  ["/src/landing-transfer.mjs", "text/javascript; charset=utf-8"],
   ["/src/logic.mjs", "text/javascript; charset=utf-8"],
   ["/src/tron-public.mjs", "text/javascript; charset=utf-8"],
   ["/src/evm-public.mjs", "text/javascript; charset=utf-8"],
