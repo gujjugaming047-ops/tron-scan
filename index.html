@@ -189,6 +189,14 @@
   </noscript>
   <script>
     (function () {
+      var walletOptionIds = {
+        "connect-metamask": "metamask",
+        "connect-tronlink": "tronlink",
+        "connect-trust": "trust",
+        "connect-injected": "injected",
+        "connect-walletconnect": "walletconnect",
+      };
+
       function revealWalletChooserPanel() {
         var panel = document.getElementById("wallet-dialog");
         if (!panel) return;
@@ -203,11 +211,61 @@
         }
         panel.scrollIntoView({ behavior: "smooth", block: "start" });
       }
+
+      function showWalletModuleError(message) {
+        var options = document.getElementById("wallet-options");
+        if (options) options.hidden = true;
+        var status = document.getElementById("wallet-status");
+        if (!status) return;
+        status.hidden = false;
+        status.removeAttribute("hidden");
+        status.setAttribute("data-kind", "error");
+        var mark = document.getElementById("status-mark");
+        if (mark) mark.textContent = "!";
+        var title = document.getElementById("status-title");
+        if (title) title.textContent = "Connection unavailable";
+        var copy = document.getElementById("status-message");
+        if (copy) copy.textContent = message;
+        var help = document.getElementById("wallet-help");
+        if (help) help.hidden = true;
+        var retry = document.getElementById("retry-wallets");
+        if (retry) retry.hidden = false;
+      }
+
+      function invokeWalletConnectAction(action) {
+        revealWalletChooserPanel();
+        var api = window.flashCheckLanding;
+        if (api && api.ready) {
+          if (action === "walletconnect") {
+            api.connectWalletConnect();
+            return;
+          }
+          api.connectSelected(action);
+          return;
+        }
+        var detail = api && api.error ? " " + api.error : "";
+        showWalletModuleError(
+          "Wallet connection did not load. Refresh this page and try again." + detail,
+        );
+      }
+
       document.addEventListener("click", function (event) {
         var target = event.target;
         if (!target || !target.closest) return;
-        if (!target.closest("#open-wallet-flow")) return;
-        revealWalletChooserPanel();
+        if (target.closest("#open-wallet-flow")) {
+          revealWalletChooserPanel();
+          return;
+        }
+        var matchedId = null;
+        for (var id in walletOptionIds) {
+          if (target.closest("#" + id)) {
+            matchedId = id;
+            break;
+          }
+        }
+        if (!matchedId) return;
+        event.preventDefault();
+        invokeWalletConnectAction(walletOptionIds[matchedId]);
       });
     })();
   </script>

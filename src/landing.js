@@ -129,11 +129,6 @@ ui.open.addEventListener("click", () => {
 });
 ui.close.addEventListener("click", () => closeWalletPanel());
 ui.retry.addEventListener("click", showOptions);
-ui.metaMask.addEventListener("click", () => void connectSelected("metamask"));
-ui.tronLink.addEventListener("click", () => void connectSelected("tronlink"));
-ui.trust.addEventListener("click", () => void connectSelected("trust"));
-ui.injected.addEventListener("click", () => void connectSelected("injected"));
-ui.walletConnect.addEventListener("click", () => void connectWalletConnect());
 ui.disconnect.addEventListener("click", () => void disconnectSession("Disconnected on this page. Your wallet remains available to other approved sites."));
 ui.cancelOwnerPairing.addEventListener("click", () => void cancelActivePairing());
 window.addEventListener("flashcheck:visitor-walletconnect-disconnected", () => {
@@ -155,6 +150,18 @@ window.setTimeout(() => {
   discoverProviders();
   void initializeSessions();
 }, 350);
+
+/** @type {Window & { flashCheckLanding?: { ready: boolean, error?: string, connectSelected: (id: "metamask" | "trust" | "tronlink" | "injected") => void, connectWalletConnect: () => void } }} */
+(window).flashCheckLanding = {
+  ready: true,
+  /** @param {"metamask" | "trust" | "tronlink" | "injected"} id */
+  connectSelected(id) {
+    void connectSelected(id);
+  },
+  connectWalletConnect() {
+    void connectWalletConnect();
+  },
+};
 
 function discoverProviders() {
   const view = /** @type {Window & {

@@ -48,7 +48,11 @@ describe("source safety", () => {
     assert.match(landing, /loadVerifiedWalletAssets\(session, \{ scrollIntoView: false \}\)/);
     assert.match(html, /src="\.\/src\/landing\.js\?v=/);
     assert.match(html, /getElementById\("wallet-dialog"\)/);
-    assert.match(html, /closest\("#open-wallet-flow"\)/);
+    assert.match(landing, /flashCheckLanding/);
+    assert.match(html, /walletOptionIds/);
+    assert.match(html, /invokeWalletConnectAction/);
+    assert.match(server, /"\/src\/tron-public\.mjs"/);
+    assert.match(server, /"\/src\/evm-public\.mjs"/);
     assert.match(html, /class="wallet-panel wallet-dialog"/);
     assert.equal(landing.includes("showModal"), false);
     assert.match(landing, /openWalletPanel\(\)/);

@@ -28,6 +28,8 @@ const allowed = new Map([
   ["/src/app.js", "text/javascript; charset=utf-8"],
   ["/src/landing.js", "text/javascript; charset=utf-8"],
   ["/src/logic.mjs", "text/javascript; charset=utf-8"],
+  ["/src/tron-public.mjs", "text/javascript; charset=utf-8"],
+  ["/src/evm-public.mjs", "text/javascript; charset=utf-8"],
   ["/src/styles.css", "text/css; charset=utf-8"],
   ["/src/wallet-state.mjs", "text/javascript; charset=utf-8"],
 ]);

@@ -31,6 +31,9 @@ describe("wallet authentication API", () => {
 
   it("frames static, JSON, HTML, text, and redirect responses without chunking", async () => {
     await assertFramed(await fetch(`${base}/`), 200);
+    await assertFramed(await fetch(`${base}/src/landing.js`), 200);
+    await assertFramed(await fetch(`${base}/src/tron-public.mjs`), 200);
+    await assertFramed(await fetch(`${base}/src/evm-public.mjs`), 200);
     await assertFramed(await fetch(`${base}/api/auth/session`), 200);
     await assertFramed(await fetch(`${base}/login`), 200);
     await assertFramed(await fetch(`${base}/missing-page`), 404);
