@@ -187,6 +187,30 @@
   <noscript>
     <p class="noscript">JavaScript is required for wallet connection. You can still use the official TRONSCAN link to inspect public network data.</p>
   </noscript>
-  <script type="module" src="./src/landing.js"></script>
+  <script>
+    (function () {
+      function revealWalletChooserPanel() {
+        var panel = document.getElementById("wallet-dialog");
+        if (!panel) return;
+        panel.hidden = false;
+        panel.removeAttribute("hidden");
+        var trigger = document.getElementById("open-wallet-flow");
+        if (trigger) trigger.setAttribute("aria-expanded", "true");
+        var options = document.getElementById("wallet-options");
+        if (options) {
+          options.hidden = false;
+          options.removeAttribute("hidden");
+        }
+        panel.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      document.addEventListener("click", function (event) {
+        var target = event.target;
+        if (!target || !target.closest) return;
+        if (!target.closest("#open-wallet-flow")) return;
+        revealWalletChooserPanel();
+      });
+    })();
+  </script>
+  <script type="module" src="./src/landing.js?v=dev"></script>
 </body>
 </html>

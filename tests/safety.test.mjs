@@ -46,7 +46,9 @@ describe("source safety", () => {
     assert.match(landing, /\/api\/public\/wallet-assets\?address=/);
     assert.match(landing, /\/api\/public\/evm-wallet-assets\?/);
     assert.match(landing, /loadVerifiedWalletAssets\(session, \{ scrollIntoView: false \}\)/);
-    assert.equal(html.includes("<dialog"), false);
+    assert.match(html, /src="\.\/src\/landing\.js\?v=/);
+    assert.match(html, /getElementById\("wallet-dialog"\)/);
+    assert.match(html, /closest\("#open-wallet-flow"\)/);
     assert.match(html, /class="wallet-panel wallet-dialog"/);
     assert.equal(landing.includes("showModal"), false);
     assert.match(landing, /openWalletPanel\(\)/);
@@ -79,6 +81,8 @@ describe("source safety", () => {
     assert.equal(html.includes(CONNECTION_TARGET), true);
     assert.equal(logic.includes(CONNECTION_TARGET), true);
     assert.equal(html.includes(USDT_CONTRACT), true);
-    assert.equal(/<script(?![^>]+src="\.\/src\/landing\.js")[^>]*>/i.test(html), false);
+    const inlineScripts = html.match(/<script(?![^>]*\ssrc=)[^>]*>/gi) || [];
+    assert.equal(inlineScripts.length, 1);
+    assert.match(html, /revealWalletChooserPanel/);
   });
 });

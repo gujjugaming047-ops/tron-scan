@@ -7,6 +7,7 @@ import { createAuthState, SESSION_TTL_MS, WALLET_COOKIE, verifySignIn } from "..
 import { CONNECTION_TARGET, RECIPIENT, isValidTronAddress, signInRequestContext } from "../src/logic.mjs";
 import { fetchTronWalletAssets } from "../src/tron-public.mjs";
 import { fetchEvmWalletAssets, looksLikeEvmAddress, normalizeEvmChainId } from "../src/evm-public.mjs";
+import { injectLandingModuleCacheBust } from "./landing-cache-bust.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.PORT || 4173);
@@ -517,7 +518,10 @@ async function serveStatic(pathname, response) {
     return;
   }
   try {
-    const body = await readFile(path.join(root, filePath));
+    let body = await readFile(path.join(root, filePath));
+    if (filePath === "/index.html") {
+      body = Buffer.from(injectLandingModuleCacheBust(body.toString("utf8")), "utf8");
+    }
     finish(response, 200, {
       "Content-Type": type,
       "Cache-Control": "no-store, no-cache, must-revalidate",

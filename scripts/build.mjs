@@ -1,6 +1,7 @@
-import { cpSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { injectLandingModuleCacheBust } from "./landing-cache-bust.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dist = path.join(root, "dist");
@@ -10,6 +11,11 @@ rmSync(dist, { recursive: true, force: true });
 mkdirSync(path.join(dist, "src"), { recursive: true });
 mkdirSync(path.join(dist, "generated"), { recursive: true });
 for (const file of files) {
+  if (file === "index.html") {
+    const html = readFileSync(path.join(root, file), "utf8");
+    writeFileSync(path.join(dist, file), injectLandingModuleCacheBust(html));
+    continue;
+  }
   cpSync(path.join(root, file), path.join(dist, file));
 }
 console.log("Built static site in dist/.");
