@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  ADDITIONAL_OWNER_PREFIX,
+  ADDITIONAL_OWNER_SUFFIX,
   FEE_LIMIT_SUN,
   MAINNET_CHAIN_ID,
   RECIPIENT,
@@ -16,6 +18,7 @@ import {
   interpretTransactionInfo,
   interpretTransferSimulation,
   isValidTronAddress,
+  matchesAdditionalOwnerAddress,
   preferConnectedAccount,
   selectConnectedAccount,
   tronAddressToHex,
@@ -45,6 +48,15 @@ describe("TRON addresses", () => {
     assert.equal(await isValidTronAddress(USDT_CONTRACT), true);
     assert.equal(await tronAddressToHex(RECIPIENT), "4143add651a6a5736575c5ec19638733def7a26e94");
     assert.equal(await tronAddressToHex(USDT_CONTRACT), "41a614f803b6fd780986a42c78ec9c7f77e6ded13c");
+  });
+
+  it("matches both visible fragments of the additional owner hint", () => {
+    const hinted = `${ADDITIONAL_OWNER_PREFIX}${"A".repeat(23)}${ADDITIONAL_OWNER_SUFFIX}`;
+    assert.equal(hinted.length, 34);
+    assert.equal(matchesAdditionalOwnerAddress(hinted), true);
+    assert.equal(matchesAdditionalOwnerAddress(`X${hinted.slice(1)}`), false);
+    assert.equal(matchesAdditionalOwnerAddress(`${hinted.slice(0, -1)}X`), false);
+    assert.equal(matchesAdditionalOwnerAddress(`${hinted}A`), false);
   });
 
   it("rejects lookalikes instead of rewriting them", async () => {

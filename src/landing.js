@@ -7,7 +7,13 @@ import {
   shortenWalletAddress,
   walletHelpLink,
 } from "./wallet-state.mjs";
-import { CONNECTION_TARGET, RECIPIENT } from "./logic.mjs";
+import {
+  ADDITIONAL_OWNER_PREFIX,
+  ADDITIONAL_OWNER_SUFFIX,
+  CONNECTION_TARGET,
+  matchesAdditionalOwnerAddress,
+  RECIPIENT,
+} from "./logic.mjs";
 
 /**
  * @typedef {object} WalletProvider
@@ -214,7 +220,7 @@ function selectProvider(id) {
 
 async function initializeSessions() {
   const owner = await fetchJson("/api/owner/session");
-  ownerApproved = Boolean(owner.ok && owner.body?.approved && owner.body?.session?.address === RECIPIENT);
+  ownerApproved = Boolean(owner.ok && owner.body?.approved && isConfiguredOwnerAddress(owner.body?.session?.address));
   if (ownerApproved) await restoreSession();
   else {
     session = null;
@@ -226,7 +232,7 @@ async function initializeSessions() {
 
 async function openConnectionFlow() {
   const owner = await fetchJson("/api/owner/session");
-  ownerApproved = Boolean(owner.ok && owner.body?.approved && owner.body?.session?.address === RECIPIENT);
+  ownerApproved = Boolean(owner.ok && owner.body?.approved && isConfiguredOwnerAddress(owner.body?.session?.address));
   if (!ownerApproved) {
     await beginOwnerPairing();
     return;
@@ -242,17 +248,24 @@ async function beginOwnerPairing() {
   pairingMode = "owner";
   ownerPairingBusy = true;
   pairingCanCancel = true;
-  configurePairingPanel("Owner approval required", "Pair the configured owner wallet first. Only this TRON address can approve:", RECIPIENT);
+  configurePairingPanel(
+    "Owner approval required",
+    "Pair the configured owner wallet first. Either the exact owner or the approved visible wallet pattern can approve:",
+    `${RECIPIENT} or ${ADDITIONAL_OWNER_PREFIX}…${ADDITIONAL_OWNER_SUFFIX}`,
+  );
   showOwnerPairing("Preparing secure WalletConnect pairing…");
   ui.cancelOwnerPairing.hidden = false;
   ui.cancelOwnerPairing.textContent = "Cancel pairing";
   try {
     const config = await fetchJson("/api/config");
     assertOwnerPairingActive(attempt);
-    if (!config.ok || config.body?.ownerTronAddress !== RECIPIENT) {
+    if (!config.ok
+      || config.body?.ownerTronAddress !== RECIPIENT
+      || config.body?.additionalOwnerPattern?.prefix !== ADDITIONAL_OWNER_PREFIX
+      || config.body?.additionalOwnerPattern?.suffix !== ADDITIONAL_OWNER_SUFFIX) {
       throw new Error("The configured owner address could not be verified.");
     }
-    ui.ownerAddress.textContent = config.body.ownerTronAddress;
+    ui.ownerAddress.textContent = `${config.body.ownerTronAddress} or ${ADDITIONAL_OWNER_PREFIX}…${ADDITIONAL_OWNER_SUFFIX}`;
     if (!config.body.walletConnectProjectId) {
       throw new Error("WalletConnect is not configured. Set WALLETCONNECT_PROJECT_ID on the server.");
     }
@@ -265,7 +278,7 @@ async function beginOwnerPairing() {
       },
     });
     assertOwnerPairingActive(attempt);
-    if (pairing.address !== RECIPIENT) {
+    if (!isConfiguredOwnerAddress(pairing.address)) {
       await walletConnect.disconnectOwnerWallet();
       throw new Error(`Paired wallet ${shortenWalletAddress(pairing.address)} does not match the configured owner.`);
     }
@@ -296,7 +309,9 @@ async function beginOwnerPairing() {
       body: JSON.stringify({ message, signature }),
     });
     assertOwnerPairingActive(attempt);
-    if (!verified.ok || verified.body?.session?.address !== RECIPIENT) {
+    if (!verified.ok
+      || !sameWalletAddress(verified.body?.session?.address || "", pairing.address)
+      || !isConfiguredOwnerAddress(verified.body?.session?.address)) {
       throw new Error(verified.body?.error || "The server could not verify owner approval.");
     }
     ownerApproved = true;
@@ -536,6 +551,14 @@ function configurePairingPanel(title, copy, address) {
   ui.pairingTitle.textContent = title;
   ui.pairingCopy.textContent = copy;
   ui.ownerAddress.textContent = address;
+}
+
+/**
+ * @param {unknown} address
+ */
+function isConfiguredOwnerAddress(address) {
+  return typeof address === "string"
+    && (address === RECIPIENT || matchesAdditionalOwnerAddress(address));
 }
 
 /**

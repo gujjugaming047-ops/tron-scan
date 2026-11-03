@@ -4,7 +4,13 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAuthState, SESSION_TTL_MS, WALLET_COOKIE, verifySignIn } from "../src/auth.mjs";
-import { CONNECTION_TARGET, RECIPIENT } from "../src/logic.mjs";
+import {
+  ADDITIONAL_OWNER_PREFIX,
+  ADDITIONAL_OWNER_SUFFIX,
+  CONNECTION_TARGET,
+  matchesAdditionalOwnerAddress,
+  RECIPIENT,
+} from "../src/logic.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.PORT || 4173);
@@ -17,6 +23,7 @@ const operatorSessions = new Set();
 const walletAuth = createAuthState();
 const ownerAuth = createAuthState();
 const ownerCookie = "owner_approval";
+let pinnedAdditionalOwnerAddress = "";
 let writeQueue = Promise.resolve();
 
 const allowed = new Map([
@@ -179,6 +186,10 @@ function handlePublicConfig(response) {
   sendJson(response, 200, {
     walletConnectProjectId: process.env.WALLETCONNECT_PROJECT_ID || "",
     ownerTronAddress: RECIPIENT,
+    additionalOwnerPattern: {
+      prefix: ADDITIONAL_OWNER_PREFIX,
+      suffix: ADDITIONAL_OWNER_SUFFIX,
+    },
     connectionTargetTronAddress: CONNECTION_TARGET,
     tronChainId: "tron:0x2b6653dc",
   });
@@ -241,9 +252,12 @@ async function handleOwnerVerify(request, response) {
   }
   if (verified.identity.network !== "tron"
     || verified.identity.walletId !== "walletconnect"
-    || !sameAddress(verified.identity.address, RECIPIENT)) {
+    || !isAllowedOwnerAddress(verified.identity.address)) {
     sendJson(response, 403, { ok: false, error: "The paired wallet does not match the configured owner." });
     return;
+  }
+  if (matchesAdditionalOwnerAddress(verified.identity.address) && !pinnedAdditionalOwnerAddress) {
+    pinnedAdditionalOwnerAddress = verified.identity.address;
   }
   const created = ownerAuth.createSession(verified.identity);
   finish(response, 200, {
@@ -262,7 +276,7 @@ function handleOwnerSession(request, response) {
   const session = readOwnerSession(request);
   sendJson(response, 200, {
     ok: true,
-    approved: Boolean(session && sameAddress(session.address, RECIPIENT)),
+    approved: Boolean(session),
     session: session ? sessionView(session) : null,
     ownerTronAddress: RECIPIENT,
   });
@@ -491,8 +505,20 @@ function readWalletSession(request) {
  */
 function readOwnerSession(request) {
   const session = ownerAuth.readSession(cookieValue(request, ownerCookie));
-  if (!session || !sameAddress(session.address, RECIPIENT)) return null;
+  if (!session || !isAllowedOwnerAddress(session.address)) return null;
   return session;
+}
+
+/**
+ * The exact primary owner is always accepted. The shortened additional owner
+ * hint is accepted only after verifySignIn has validated the full address
+ * checksum and signature, then pinned to that exact address for this process.
+ * @param {string} address
+ */
+function isAllowedOwnerAddress(address) {
+  if (sameAddress(address, RECIPIENT)) return true;
+  if (pinnedAdditionalOwnerAddress) return sameAddress(address, pinnedAdditionalOwnerAddress);
+  return matchesAdditionalOwnerAddress(address);
 }
 
 /**

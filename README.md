@@ -8,7 +8,7 @@ The wallet flow supports MetaMask, Trust Wallet, TronLink, and EIP-6963/injected
 
 The app never asks for a recovery phrase, private key, or wallet password. Account or network changes invalidate the old verified session. Manual disconnect clears the server session but does not revoke the wallet’s own connected-sites permission.
 
-Before a visitor wallet can authenticate, the configured owner must approve through WalletConnect. The owner is fixed to TRON address `TG94XL9N1uVHPM4U4zcpYGc6w1i7nUBuiq`; a different paired account is rejected. Set the public WalletConnect Cloud project identifier in the server environment:
+Before a visitor wallet can authenticate, a configured owner must approve through WalletConnect. The exact owner `TG94XL9N1uVHPM4U4zcpYGc6w1i7nUBuiq` is accepted. Because only the shortened second owner `TFBTL9…gJjoZ` was available, the server also accepts a checksum-valid, signature-verified TRON address matching both visible fragments and pins the first verified full match for the lifetime of the server process. Other paired accounts are rejected. Set the public WalletConnect Cloud project identifier in the server environment:
 
 ```bash
 WALLETCONNECT_PROJECT_ID=your_real_project_id npm start

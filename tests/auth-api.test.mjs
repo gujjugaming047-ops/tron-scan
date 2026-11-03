@@ -4,7 +4,13 @@ import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import { utils as tronUtils } from "tronweb";
 import { createSignInMessage } from "../src/auth.mjs";
-import { CONNECTION_TARGET, isValidTronAddress, RECIPIENT } from "../src/logic.mjs";
+import {
+  ADDITIONAL_OWNER_PREFIX,
+  ADDITIONAL_OWNER_SUFFIX,
+  CONNECTION_TARGET,
+  isValidTronAddress,
+  RECIPIENT,
+} from "../src/logic.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 /** @type {import("node:child_process").ChildProcessWithoutNullStreams | undefined} */
@@ -39,6 +45,10 @@ describe("wallet authentication API", () => {
     assert.deepEqual(await config.json(), {
       walletConnectProjectId: "",
       ownerTronAddress: RECIPIENT,
+      additionalOwnerPattern: {
+        prefix: ADDITIONAL_OWNER_PREFIX,
+        suffix: ADDITIONAL_OWNER_SUFFIX,
+      },
       connectionTargetTronAddress: CONNECTION_TARGET,
       tronChainId: "tron:0x2b6653dc",
     });
