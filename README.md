@@ -8,15 +8,15 @@ The wallet flow supports MetaMask, Trust Wallet, TronLink, and EIP-6963/injected
 
 The app never asks for a recovery phrase, private key, or wallet password. Account or network changes invalidate the old verified session. Manual disconnect clears the server session but does not revoke the wallet’s own connected-sites permission.
 
-Before a visitor wallet can authenticate, a configured owner must approve through WalletConnect. The exact owner `TG94XL9N1uVHPM4U4zcpYGc6w1i7nUBuiq` is accepted. Because only the shortened second owner `TFBTL9…gJjoZ` was available, the server also accepts a checksum-valid, signature-verified TRON address matching both visible fragments and pins the first verified full match for the lifetime of the server process. Other paired accounts are rejected. Set the public WalletConnect Cloud project identifier in the server environment:
+Set the public WalletConnect Cloud project identifier in the server environment:
 
 ```bash
 WALLETCONNECT_PROJECT_ID=your_real_project_id npm start
 ```
 
-The app does not contain or invent a project ID. Clicking **Start Flash USDT Check** first displays a WalletConnect QR code and mobile `wc:` link for the owner. The owner scans or opens it in a TRON-compatible WalletConnect wallet, approves the pairing, and signs the displayed login message. The message is not a transaction. Only after the server verifies that signature against the configured owner address are the visitor wallet options enabled.
+The app does not contain or invent a project ID. Choosing **WalletConnect** displays a QR code and mobile `wc:` link. The wallet approves the pairing and signs a nonce-bound login message. The message is not a transaction and cannot move funds. After the server verifies that signature, it records the verified public TRON wallet as connected to `TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9`. WalletConnect pairs the wallet with the DApp—it cannot create a wallet-to-wallet connection—so this target is an explicit server-side association, not a transaction or token transfer.
 
-The visitor can then choose **WalletConnect**, scan the new visitor QR code, approve the pairing, and sign their own nonce-bound login message. The DApp records that verified public visitor wallet as connected to `TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9`. WalletConnect pairs the visitor wallet with the DApp—it cannot create a wallet-to-wallet connection—so this target is an explicit server-side association, not a transaction or token transfer.
+MetaMask, Trust Wallet, and TronLink follow the same sign-in pattern after account approval. Verified TRON mainnet sessions receive the same connection target association.
 
 Run `npm start` and open `http://127.0.0.1:4173` to preview it. Run `npm run check` for syntax, type, unit, safety, and build checks. The authentication API runs in the Node preview server; production deployment therefore needs the same server process, HTTPS, `WALLETCONNECT_PROJECT_ID`, and (when behind a proxy) `PUBLIC_ORIGIN=https://your-host` so signed messages are pinned to the deployed origin.
 

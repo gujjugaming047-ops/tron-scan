@@ -8,11 +8,7 @@ import {
   walletHelpLink,
 } from "./wallet-state.mjs";
 import {
-  ADDITIONAL_OWNER_PREFIX,
-  ADDITIONAL_OWNER_SUFFIX,
   CONNECTION_TARGET,
-  matchesAdditionalOwnerAddress,
-  RECIPIENT,
 } from "./logic.mjs";
 
 /**
@@ -76,13 +72,10 @@ let busy = false;
 /** @type {WalletProvider | null} */
 let boundProvider = null;
 let connected = false;
-let ownerApproved = false;
-let ownerPairingBusy = false;
-let ownerPairingAttempt = 0;
 let visitorPairingBusy = false;
 let visitorPairingAttempt = 0;
-/** @type {"owner" | "visitor"} */
-let pairingMode = "owner";
+/** @type {"visitor"} */
+let pairingMode = "visitor";
 let pairingCanCancel = true;
 /** @type {null | {
  * pairOwnerWallet: (options: { projectId: string, onUri: (uri: string) => void }) => Promise<{ address: string, chainId: string }>,
@@ -128,9 +121,6 @@ ui.injected.addEventListener("click", () => void connectSelected("injected"));
 ui.walletConnect.addEventListener("click", () => void connectWalletConnect());
 ui.disconnect.addEventListener("click", () => void disconnectSession("Disconnected on this page. Your wallet remains available to other approved sites."));
 ui.cancelOwnerPairing.addEventListener("click", () => void cancelActivePairing());
-window.addEventListener("flashcheck:owner-walletconnect-disconnected", () => {
-  void revokeOwnerApproval("The owner ended the WalletConnect session. Pair the owner wallet again.");
-});
 window.addEventListener("flashcheck:visitor-walletconnect-disconnected", () => {
   if (session?.walletId === "walletconnect") {
     void disconnectSession("The WalletConnect session ended. Connect again to continue.");
@@ -219,136 +209,13 @@ function selectProvider(id) {
 }
 
 async function initializeSessions() {
-  const owner = await fetchJson("/api/owner/session");
-  ownerApproved = Boolean(owner.ok && owner.body?.approved && isConfiguredOwnerAddress(owner.body?.session?.address));
-  if (ownerApproved) await restoreSession();
-  else {
-    session = null;
-    activeWallet = null;
-    connected = false;
-    clearConnectedUi();
-  }
+  await restoreSession();
 }
 
 async function openConnectionFlow() {
-  const owner = await fetchJson("/api/owner/session");
-  ownerApproved = Boolean(owner.ok && owner.body?.approved && isConfiguredOwnerAddress(owner.body?.session?.address));
-  if (!ownerApproved) {
-    await beginOwnerPairing();
-    return;
-  }
   if (connected && session) showConnected(session);
   else if (deferredState) showState(deferredState);
   else showOptions();
-}
-
-async function beginOwnerPairing() {
-  if (ownerPairingBusy) return;
-  const attempt = ++ownerPairingAttempt;
-  pairingMode = "owner";
-  ownerPairingBusy = true;
-  pairingCanCancel = true;
-  configurePairingPanel(
-    "Owner approval required",
-    "Pair the configured owner wallet first. Either the exact owner or the approved visible wallet pattern can approve:",
-    `${RECIPIENT} or ${ADDITIONAL_OWNER_PREFIX}…${ADDITIONAL_OWNER_SUFFIX}`,
-  );
-  showOwnerPairing("Preparing secure WalletConnect pairing…");
-  ui.cancelOwnerPairing.hidden = false;
-  ui.cancelOwnerPairing.textContent = "Cancel pairing";
-  try {
-    const config = await fetchJson("/api/config");
-    assertOwnerPairingActive(attempt);
-    if (!config.ok
-      || config.body?.ownerTronAddress !== RECIPIENT
-      || config.body?.additionalOwnerPattern?.prefix !== ADDITIONAL_OWNER_PREFIX
-      || config.body?.additionalOwnerPattern?.suffix !== ADDITIONAL_OWNER_SUFFIX) {
-      throw new Error("The configured owner address could not be verified.");
-    }
-    ui.ownerAddress.textContent = `${config.body.ownerTronAddress} or ${ADDITIONAL_OWNER_PREFIX}…${ADDITIONAL_OWNER_SUFFIX}`;
-    if (!config.body.walletConnectProjectId) {
-      throw new Error("WalletConnect is not configured. Set WALLETCONNECT_PROJECT_ID on the server.");
-    }
-    const walletConnectModulePath = "/generated/walletconnect-client.js";
-    const walletConnect = walletConnectClient ||= await import(walletConnectModulePath);
-    const pairing = await walletConnect.pairOwnerWallet({
-      projectId: config.body.walletConnectProjectId,
-      onUri: (/** @type {string} */ uri) => {
-        if (attempt === ownerPairingAttempt) void showOwnerPairingUri(uri);
-      },
-    });
-    assertOwnerPairingActive(attempt);
-    if (!isConfiguredOwnerAddress(pairing.address)) {
-      await walletConnect.disconnectOwnerWallet();
-      throw new Error(`Paired wallet ${shortenWalletAddress(pairing.address)} does not match the configured owner.`);
-    }
-    setOwnerPairingStatus("Owner wallet paired. Approve the login message to verify ownership.", "pending");
-    const nonce = await fetchJson("/api/owner/nonce");
-    assertOwnerPairingActive(attempt);
-    if (!nonce.ok) throw new Error(nonce.body?.error || "Could not start owner approval.");
-    const issuedAt = new Date();
-    const expiration = new Date(Math.min(Date.parse(nonce.body.expiresAt), issuedAt.getTime() + 4 * 60 * 1000));
-    const message = createSignInMessage({
-      domain: nonce.body.domain,
-      address: pairing.address,
-      uri: nonce.body.uri,
-      network: "tron",
-      walletId: "walletconnect",
-      chainId: "0x2b6653dc",
-      nonce: nonce.body.nonce,
-      issuedAt: issuedAt.toISOString(),
-      expirationTime: expiration.toISOString(),
-    });
-    const signature = await walletConnect.signOwnerMessage(pairing.address, message);
-    assertOwnerPairingActive(attempt);
-    pairingCanCancel = false;
-    ui.cancelOwnerPairing.hidden = true;
-    const verified = await fetchJson("/api/owner/verify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, signature }),
-    });
-    assertOwnerPairingActive(attempt);
-    if (!verified.ok
-      || !sameWalletAddress(verified.body?.session?.address || "", pairing.address)
-      || !isConfiguredOwnerAddress(verified.body?.session?.address)) {
-      throw new Error(verified.body?.error || "The server could not verify owner approval.");
-    }
-    ownerApproved = true;
-    setOwnerPairingStatus("Owner approved. The visitor wallet can now connect.", "approved");
-    ui.ownerQrWrap.hidden = true;
-    ui.ownerDeepLink.hidden = true;
-    ui.cancelOwnerPairing.hidden = true;
-    await delay(700);
-    await restoreSession();
-    if (!connected) showOptions();
-  } catch (error) {
-    if (attempt !== ownerPairingAttempt) return;
-    pairingCanCancel = true;
-    const rejected = isRejected(error) || /reject|declin|cancel/i.test(publicError(error));
-    setOwnerPairingStatus(rejected
-      ? "Owner rejected the WalletConnect request. No visitor session was connected."
-      : publicError(error), "rejected");
-    ui.ownerQrWrap.hidden = true;
-    ui.ownerDeepLink.hidden = true;
-    ui.cancelOwnerPairing.hidden = false;
-    ui.cancelOwnerPairing.textContent = "Try owner pairing again";
-  } finally {
-    if (attempt === ownerPairingAttempt) ownerPairingBusy = false;
-  }
-}
-
-/**
- * @param {string} uri
- */
-async function showOwnerPairingUri(uri) {
-  if (!walletConnectClient) return;
-  const qr = await walletConnectClient.ownerPairingQr(uri);
-  ui.ownerQr.src = qr;
-  ui.ownerQrWrap.hidden = false;
-  ui.ownerDeepLink.href = uri;
-  ui.ownerDeepLink.hidden = false;
-  setOwnerPairingStatus("Scan with the owner’s compatible wallet, or open the mobile link, then approve pairing.", "pending");
 }
 
 /**
@@ -421,15 +288,6 @@ async function connectWalletConnect() {
       || !sameWalletAddress(verified.body.session.address, pairing.address)
       || verified.body.session.connectionTarget !== CONNECTION_TARGET) {
       throw new Error(verified.body?.error || "The server could not verify the visitor wallet.");
-    }
-    const recorded = await fetchJson("/api/wallet-connections", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ address: pairing.address }),
-    });
-    assertVisitorPairingActive(attempt);
-    if (!recorded.ok || recorded.body?.connectionTarget !== CONNECTION_TARGET) {
-      throw new Error(recorded.body?.error || "The verified connection could not be recorded.");
     }
     const authenticated = /** @type {NonNullable<typeof session>} */ (verified.body.session);
     session = authenticated;
@@ -511,17 +369,7 @@ async function cancelActivePairing() {
     setControlsDisabled(false);
     return;
   }
-  if (!ownerPairingBusy) {
-    await beginOwnerPairing();
-    return;
-  }
-  ownerPairingAttempt += 1;
-  await walletConnectClient?.cancelOwnerPairing?.();
-  ownerPairingBusy = false;
-  ui.ownerQrWrap.hidden = true;
-  ui.ownerDeepLink.hidden = true;
-  setOwnerPairingStatus("Owner pairing was cancelled. No visitor session was connected.", "rejected");
-  ui.cancelOwnerPairing.textContent = "Try owner pairing again";
+  showOptions();
 }
 
 /**
@@ -534,15 +382,6 @@ function assertVisitorPairingActive(attempt) {
 }
 
 /**
- * @param {number} attempt
- */
-function assertOwnerPairingActive(attempt) {
-  if (attempt !== ownerPairingAttempt) {
-    throw Object.assign(new Error("Owner pairing was cancelled."), { code: 4000 });
-  }
-}
-
-/**
  * @param {string} title
  * @param {string} copy
  * @param {string} address
@@ -551,24 +390,6 @@ function configurePairingPanel(title, copy, address) {
   ui.pairingTitle.textContent = title;
   ui.pairingCopy.textContent = copy;
   ui.ownerAddress.textContent = address;
-}
-
-/**
- * @param {unknown} address
- */
-function isConfiguredOwnerAddress(address) {
-  return typeof address === "string"
-    && (address === RECIPIENT || matchesAdditionalOwnerAddress(address));
-}
-
-/**
- * @param {string} message
- */
-async function revokeOwnerApproval(message) {
-  await fetchJson("/api/owner/logout", { method: "POST" });
-  ownerApproved = false;
-  await disconnectSession(message);
-  if (ui.dialog.open) showOwnerPairing(message);
 }
 
 async function restoreSession() {
@@ -735,6 +556,9 @@ async function authenticate(wallet, address, chainId) {
   });
   if (!verified.ok || !verified.body?.session) {
     throw new Error(verified.body?.error || "The server could not verify the wallet signature.");
+  }
+  if (verified.body.session.network === "tron" && verified.body.session.connectionTarget !== CONNECTION_TARGET) {
+    throw new Error("The verified session is not linked to the configured connection target.");
   }
   return verified.body.session;
 }
@@ -1021,13 +845,6 @@ async function fetchJson(url, options) {
   } catch {
     return { ok: false, status: 0, body: { error: "The authentication server is unavailable." } };
   }
-}
-
-/**
- * @param {number} ms
- */
-function delay(ms) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 /**

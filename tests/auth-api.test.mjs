@@ -1,18 +1,17 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import { utils as tronUtils } from "tronweb";
 import { createSignInMessage } from "../src/auth.mjs";
 import {
-  ADDITIONAL_OWNER_PREFIX,
-  ADDITIONAL_OWNER_SUFFIX,
   CONNECTION_TARGET,
   isValidTronAddress,
-  RECIPIENT,
 } from "../src/logic.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
+const storePath = path.join(root, "data", "connected-wallets.json");
 /** @type {import("node:child_process").ChildProcessWithoutNullStreams | undefined} */
 let child;
 let base = "";
@@ -38,41 +37,29 @@ describe("wallet authentication API", () => {
     await assertFramed(await fetch(`${base}/logout`, { method: "POST", redirect: "manual" }), 303);
   });
 
-  it("requires the configured owner before visitor authentication", async () => {
+  it("exposes the connection target and allows visitor authentication without owner approval", async () => {
     const headers = { Origin: base };
     const config = await fetch(`${base}/api/config`, { headers });
     assert.equal(config.status, 200);
     assert.deepEqual(await config.json(), {
       walletConnectProjectId: "",
-      ownerTronAddress: RECIPIENT,
-      additionalOwnerPattern: {
-        prefix: ADDITIONAL_OWNER_PREFIX,
-        suffix: ADDITIONAL_OWNER_SUFFIX,
-      },
       connectionTargetTronAddress: CONNECTION_TARGET,
       tronChainId: "tron:0x2b6653dc",
     });
     assert.equal(await isValidTronAddress(CONNECTION_TARGET), true);
-    const ownerSession = await fetch(`${base}/api/owner/session`, { headers });
-    assert.deepEqual(await ownerSession.json(), {
-      ok: true,
-      approved: false,
-      session: null,
-      ownerTronAddress: RECIPIENT,
-    });
     const visitorNonce = await fetch(`${base}/api/auth/nonce`, { headers });
-    assert.equal(visitorNonce.status, 403);
-    assert.match((await visitorNonce.json()).error, /owner.*approve/i);
+    assert.equal(visitorNonce.status, 200);
+    const nonceBody = await visitorNonce.json();
+    assert.equal(typeof nonceBody.nonce, "string");
+    assert.ok(nonceBody.nonce.length >= 16);
   });
 
-  it("rejects a paired TRON wallet that is not the configured owner", async () => {
+  it("accepts any verified TRON WalletConnect owner signature", async () => {
     const headers = { Origin: base };
     const account = tronUtils.accounts.generateAccount();
-    assert.notEqual(account.address.base58, RECIPIENT);
     const nonceResponse = await fetch(`${base}/api/owner/nonce`, { headers });
     assert.equal(nonceResponse.status, 200);
     const nonce = await nonceResponse.json();
-    assert.equal(nonce.ownerTronAddress, RECIPIENT);
     const issuedAt = new Date();
     const message = createSignInMessage({
       domain: nonce.domain,
@@ -91,16 +78,42 @@ describe("wallet authentication API", () => {
       headers: { ...headers, "Content-Type": "application/json" },
       body: JSON.stringify({ message, signature }),
     });
-    assert.equal(verification.status, 403);
-    assert.match((await verification.json()).error, /does not match.*owner/i);
+    assert.equal(verification.status, 200);
+    assert.equal((await verification.json()).session.address, account.address.base58);
+  });
 
-    const replay = await fetch(`${base}/api/owner/verify`, {
+  it("records a verified TRON wallet against the connection target", async () => {
+    const headers = { Origin: base };
+    const account = tronUtils.accounts.generateAccount();
+    const nonceResponse = await fetch(`${base}/api/auth/nonce`, { headers });
+    assert.equal(nonceResponse.status, 200);
+    const nonce = await nonceResponse.json();
+    const issuedAt = new Date();
+    const message = createSignInMessage({
+      domain: nonce.domain,
+      address: account.address.base58,
+      uri: nonce.uri,
+      network: "tron",
+      walletId: "walletconnect",
+      chainId: "0x2b6653dc",
+      nonce: nonce.nonce,
+      issuedAt: issuedAt.toISOString(),
+      expirationTime: new Date(issuedAt.getTime() + 4 * 60 * 1000).toISOString(),
+    });
+    const signature = tronUtils.message.signMessage(message, account.privateKey);
+    const verification = await fetch(`${base}/api/auth/verify`, {
       method: "POST",
       headers: { ...headers, "Content-Type": "application/json" },
       body: JSON.stringify({ message, signature }),
     });
-    assert.equal(replay.status, 401);
-    assert.match((await replay.json()).error, /nonce/i);
+    assert.equal(verification.status, 200);
+    const body = await verification.json();
+    assert.equal(body.session.connectionTarget, CONNECTION_TARGET);
+    assert.equal(body.session.address, account.address.base58);
+    const stored = JSON.parse(await readFile(storePath, "utf8"));
+    const latest = stored.wallets.at(-1);
+    assert.equal(latest.address, account.address.base58);
+    assert.equal(latest.connectionTarget, CONNECTION_TARGET);
   });
 
   it("rejects a mismatched browser origin", async () => {

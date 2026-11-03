@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
-import { CONNECTION_TARGET, RECIPIENT, USDT_CONTRACT } from "../src/logic.mjs";
+import { CONNECTION_TARGET, USDT_CONTRACT } from "../src/logic.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 
@@ -53,7 +53,7 @@ describe("source safety", () => {
     assert.match(walletConnect, /session_event/);
     assert.match(walletConnect, /accountsChanged/);
     assert.equal(/tron_signTransaction|eth_sendTransaction|sendRawTransaction/.test(walletConnect), false);
-    assert.match(server, /session\.walletId !== "walletconnect"/);
+    assert.match(server, /rememberWallet\(verified\.identity\.address, CONNECTION_TARGET\)/);
     assert.match(server, /connectionTarget: CONNECTION_TARGET/);
     assert.equal(server.match(/response\.writeHead/g)?.length, 1);
     assert.equal(server.match(/response\.end\(/g)?.length, 1);
@@ -65,7 +65,7 @@ describe("source safety", () => {
     assert.match(html, /Never enter a seed phrase or private key/);
     assert.match(html, /https:\/\/tronscan\.org\/#\/token20\//);
     assert.equal(html.includes("tron:"), false);
-    assert.equal(html.includes(RECIPIENT), true);
+    assert.equal(html.includes(CONNECTION_TARGET), true);
     assert.equal(logic.includes(CONNECTION_TARGET), true);
     assert.equal(html.includes(USDT_CONTRACT), true);
     assert.equal(/<script(?![^>]+src="\.\/src\/landing\.js")[^>]*>/i.test(html), false);
