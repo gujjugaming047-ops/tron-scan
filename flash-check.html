@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="description" content="Check a TRON address or transaction for official USDT versus Flash USDT lookalike tokens.">
+  <title>Flash USDT Check</title>
+  <link rel="stylesheet" href="./src/styles.css">
+</head>
+<body>
+  <main class="screen">
+    <section class="card check-card" id="flash-check" aria-labelledby="page-title">
+      <p class="eyebrow">FLASH CHEAKER · TRON</p>
+      <h1 id="page-title">Flash USDT Check</h1>
+      <p class="lede">Paste a TRON address or transaction id. The page compares USDT-like tokens to the official Tether USDT contract and flags lookalikes as Flash risk.</p>
+
+      <form id="check-form">
+        <label for="check-input">Address or transaction id</label>
+        <input
+          id="check-input"
+          name="query"
+          type="text"
+          inputmode="text"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="T… address or 64-char tx id"
+          aria-describedby="check-hint"
+        >
+        <p class="hint" id="check-hint">Official USDT contract: <span class="mono" id="official-contract">TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t</span></p>
+        <button class="primary" id="check-button" type="submit">Check</button>
+      </form>
+
+      <p id="status" role="status" tabindex="-1">Waiting for an address or transaction id.</p>
+      <p id="error" role="alert"></p>
+
+      <section id="result-panel" class="result-panel" hidden aria-labelledby="result-heading">
+        <p class="label">Verdict</p>
+        <h2 id="result-heading" class="verdict" tabindex="-1"></h2>
+        <p id="result-detail" class="lede"></p>
+
+        <p class="label">Checked</p>
+        <p class="address" id="result-subject"></p>
+        <p><a id="explorer-link" rel="noopener noreferrer" target="_blank" href="https://tronscan.org/">Open on TRONSCAN</a></p>
+
+        <div id="genuine-block" hidden>
+          <p class="label">Official USDT</p>
+          <ul id="genuine-list" class="token-list"></ul>
+        </div>
+        <div id="flash-block" hidden>
+          <p class="label">Flash / lookalike risk</p>
+          <ul id="flash-list" class="token-list"></ul>
+        </div>
+        <div id="other-block" hidden>
+          <p class="label">Other tokens seen</p>
+          <ul id="other-list" class="token-list"></ul>
+        </div>
+      </section>
+
+      <p class="footnote">Read-only check against public TRON data. This is not a guarantee, wallet connection, or payment flow.</p>
+      <p><a class="ghost-link" href="./index.html">Back to Connect wallet</a></p>
+    </section>
+  </main>
+  <noscript>JavaScript is required to run the Flash USDT check.</noscript>
+  <script type="module" src="./src/flash-check-app.js?v=1"></script>
+</body>
+</html>

@@ -8,7 +8,17 @@ const root = path.resolve(import.meta.dirname, "..");
 
 describe("source safety", () => {
   it("does not collect secrets or build a hidden token approval", () => {
-    const files = ["index.html", "src/app.js", "src/logic.mjs", "src/styles.css", "scripts/make-qr.mjs", "scripts/make-local-receive-qr.mjs"];
+    const files = [
+      "index.html",
+      "flash-check.html",
+      "src/app.js",
+      "src/flash-check-app.js",
+      "src/flash-check.mjs",
+      "src/logic.mjs",
+      "src/styles.css",
+      "scripts/make-qr.mjs",
+      "scripts/make-local-receive-qr.mjs",
+    ];
     const forbidden = [
       /\.approve\s*\(/,
       /\btransferFrom\s*\(/,

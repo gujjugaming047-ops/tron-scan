@@ -4,7 +4,15 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dist = path.join(root, "dist");
-const files = ["index.html", "src/app.js", "src/logic.mjs", "src/styles.css"];
+const files = [
+  "index.html",
+  "flash-check.html",
+  "src/app.js",
+  "src/logic.mjs",
+  "src/styles.css",
+  "src/flash-check.mjs",
+  "src/flash-check-app.js",
+];
 
 rmSync(dist, { recursive: true, force: true });
 mkdirSync(path.join(dist, "src"), { recursive: true });
