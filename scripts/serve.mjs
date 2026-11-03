@@ -22,6 +22,7 @@ const allowed = new Map([
   ["/src/landing.js", "text/javascript; charset=utf-8"],
   ["/src/logic.mjs", "text/javascript; charset=utf-8"],
   ["/src/styles.css", "text/css; charset=utf-8"],
+  ["/src/wallet-state.mjs", "text/javascript; charset=utf-8"],
 ]);
 
 const server = createServer(async (request, response) => {
@@ -449,7 +450,7 @@ function loginPage(message) {
   return pageShell("Operator login", `<section class="card" aria-labelledby="login-title">
       <p class="eyebrow">Operator</p>
       <h1 id="login-title">Login</h1>
-      <p class="lede">Sign in to see public TRON addresses that finished Connect wallet.</p>
+      <p class="lede">Sign in to see public wallet addresses that completed verified connection.</p>
       ${notice}
       <form method="post" action="/login">
         <label for="login-id">Login id</label>
@@ -470,12 +471,12 @@ function walletListPage(wallets) {
         <td>${escapeHtml(formatConnectedAt(wallet.connectedAt))}</td>
       </tr>`).join("");
   const body = rows
-    ? `<table><thead><tr><th>TRON address</th><th>Connected</th></tr></thead><tbody>${rows}</tbody></table>`
+    ? `<table><thead><tr><th>Wallet address</th><th>Connected</th></tr></thead><tbody>${rows}</tbody></table>`
     : `<p>No wallets have connected yet.</p>`;
   return pageShell("Connected wallets", `<section class="card operator-list" aria-labelledby="wallets-title">
       <p class="eyebrow">Operator</p>
       <h1 id="wallets-title">Connected wallets</h1>
-      <p class="lede">Public TRON addresses and the time each one finished Connect wallet.</p>
+      <p class="lede">Public wallet addresses and the time each one completed verified connection.</p>
       ${body}
       <form method="post" action="/logout"><button class="ghost" type="submit">Log out</button></form>
     </section>`);
@@ -574,6 +575,8 @@ function sendJson(response, status, payload) {
 }
 
 server.listen(port, "127.0.0.1", () => {
-  console.log(`Local preview: http://127.0.0.1:${port}`);
+  const address = server.address();
+  const actualPort = address && typeof address === "object" ? address.port : port;
+  console.log(`Local preview: http://127.0.0.1:${actualPort}`);
   console.log("Do not generate the production QR from this local URL.");
 });

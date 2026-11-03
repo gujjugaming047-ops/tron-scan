@@ -1,3 +1,13 @@
+import {
+  evaluateSessionRestore,
+  firstEvmAddress,
+  identifyEvmProvider,
+  sameWalletAddress,
+  selectWalletProvider,
+  shortenWalletAddress,
+  walletHelpLink,
+} from "./wallet-state.mjs";
+
 /**
  * @typedef {object} WalletProvider
  * @property {(args: { method: string, params?: unknown[] }) => Promise<any>} request
@@ -48,6 +58,9 @@ let activeWallet = null;
 let busy = false;
 /** @type {WalletProvider | null} */
 let boundProvider = null;
+let connected = false;
+/** @type {{ kind: "pending" | "success" | "error", title: string, message: string, address?: string, help?: { href: string, label: string } | null } | null} */
+let deferredState = null;
 
 window.addEventListener("eip6963:announceProvider", (event) => {
   const detail = /** @type {CustomEvent<{ info?: { name?: string, rdns?: string }, provider?: WalletProvider }>} */ (event).detail;
@@ -62,7 +75,8 @@ window.addEventListener("tronLink#initialized", () => {
 });
 
 ui.open.addEventListener("click", () => {
-  if (session && activeWallet) showConnected(session);
+  if (connected && session && activeWallet) showConnected(session);
+  else if (deferredState) showState(deferredState);
   else showOptions();
   ui.dialog.showModal();
 });
@@ -117,12 +131,11 @@ function discoverProviders() {
  * @returns {WalletDescriptor}
  */
 function describeEvmProvider(provider, announcedName, rdns) {
-  const trust = provider.isTrust || /trust/i.test(announcedName || "") || /trust/i.test(rdns || "");
-  const metaMask = !trust && (provider.isMetaMask || /metamask/i.test(announcedName || "") || /metamask/i.test(rdns || ""));
+  const identity = identifyEvmProvider(provider, announcedName, rdns);
   return {
-    id: trust ? "trust" : metaMask ? "metamask" : "injected",
+    id: identity.id,
     network: "evm",
-    name: announcedName || (trust ? "Trust Wallet" : metaMask ? "MetaMask" : "Browser wallet"),
+    name: identity.name,
     rdns,
     provider,
   };
@@ -149,17 +162,17 @@ function renderProviderOptions() {
  * @param {"metamask" | "trust" | "tronlink" | "injected"} id
  */
 function selectProvider(id) {
-  const matches = providers.filter((item) => item.id === id);
-  if (!matches.length) return null;
-  if (id === "trust" && /Trust/i.test(navigator.userAgent)) {
-    return matches.find((item) => item.network === "evm") || matches[0];
-  }
-  return matches[0];
+  const trustInApp = id === "trust" && /Trust/i.test(navigator.userAgent);
+  return selectWalletProvider(providers, id, trustInApp ? "tron" : null);
 }
 
 async function restoreSession() {
   const response = await fetchJson("/api/auth/session");
   if (!response.ok || !response.body?.session) {
+    session = null;
+    activeWallet = null;
+    connected = false;
+    deferredState = null;
     clearConnectedUi();
     return;
   }
@@ -170,7 +183,7 @@ async function restoreSession() {
   if (!wallet) {
     activeWallet = null;
     clearConnectedUi();
-    showState({
+    rememberState({
       kind: "error",
       title: "Wallet is not available",
       message: "Your verified session is still valid, but its wallet provider is not available in this browser.",
@@ -179,18 +192,19 @@ async function restoreSession() {
     return;
   }
   const current = await readAuthorizedAccount(wallet);
-  if (!current) {
+  const currentChain = current ? await readChainId(wallet) : "";
+  const restoreState = evaluateSessionRestore(restored, wallet, current, currentChain);
+  if (restoreState === "locked") {
     activeWallet = wallet;
     clearConnectedUi();
-    showState({
+    rememberState({
       kind: "error",
       title: "Wallet is locked",
       message: "Unlock the wallet to restore your verified session. You will not be asked to sign again while the session remains valid.",
     });
     return;
   }
-  const currentChain = await readChainId(wallet);
-  if (!sameAddress(current, restored.address) || currentChain !== restored.chainId) {
+  if (restoreState === "changed") {
     await disconnectSession("The wallet account or network changed. Connect again to verify the new selection.");
     return;
   }
@@ -231,7 +245,7 @@ async function connectSelected(walletId) {
 
     const existing = await fetchJson("/api/auth/session");
     if (existing.ok && existing.body?.session
-      && sameAddress(existing.body.session.address, address)
+      && sameWalletAddress(existing.body.session.address, address)
       && existing.body.session.chainId === chainId
       && existing.body.session.walletId === wallet.id) {
       session = existing.body.session;
@@ -373,7 +387,7 @@ async function handleWalletChange(message) {
   if (!activeWallet || !session) return;
   const address = await readAuthorizedAccount(activeWallet);
   const chainId = address ? await readChainId(activeWallet) : "";
-  if (address && sameAddress(address, session.address) && chainId === session.chainId) return;
+  if (address && sameWalletAddress(address, session.address) && chainId === session.chainId) return;
   await disconnectSession(`${message} Connect again to verify the new account and network.`);
   if (ui.dialog.open) showState({ kind: "error", title: "Wallet selection changed", message: `${message} Sign in again to continue.` });
 }
@@ -386,7 +400,7 @@ async function disconnectSession(message) {
   session = null;
   activeWallet = null;
   clearConnectedUi();
-  if (ui.dialog.open) showState({ kind: "error", title: "Wallet disconnected", message });
+  rememberState({ kind: "error", title: "Wallet disconnected", message });
 }
 
 /**
@@ -394,8 +408,10 @@ async function disconnectSession(message) {
  */
 function showConnected(authenticated) {
   session = authenticated;
+  connected = true;
+  deferredState = null;
   ui.chip.hidden = false;
-  ui.headerAddress.textContent = shortenAddress(authenticated.address);
+  ui.headerAddress.textContent = shortenWalletAddress(authenticated.address);
   ui.open.textContent = "Continue Flash USDT Check";
   const arrow = document.createElement("span");
   arrow.setAttribute("aria-hidden", "true");
@@ -412,6 +428,7 @@ function showConnected(authenticated) {
 }
 
 function clearConnectedUi() {
+  connected = false;
   ui.chip.hidden = true;
   ui.headerAddress.textContent = "";
   ui.open.replaceChildren("Start Flash USDT Check");
@@ -422,6 +439,7 @@ function clearConnectedUi() {
 }
 
 function showOptions() {
+  deferredState = null;
   discoverProviders();
   renderProviderOptions();
   ui.options.hidden = false;
@@ -436,6 +454,7 @@ function showOptions() {
  * @param {{ kind: "pending" | "success" | "error", title: string, message: string, address?: string, help?: { href: string, label: string } | null }} next
  */
 function showState(next) {
+  deferredState = next;
   ui.options.hidden = true;
   ui.status.hidden = false;
   ui.status.dataset.kind = next.kind;
@@ -450,6 +469,14 @@ function showState(next) {
     ui.help.textContent = `${next.help.label} ↗`;
   }
   ui.retry.hidden = next.kind === "pending";
+}
+
+/**
+ * @param {{ kind: "pending" | "success" | "error", title: string, message: string, address?: string, help?: { href: string, label: string } | null }} next
+ */
+function rememberState(next) {
+  deferredState = next;
+  if (ui.dialog.open) showState(next);
 }
 
 /**
@@ -480,15 +507,6 @@ Chain ID: ${fields.chainId}
 Nonce: ${fields.nonce}
 Issued At: ${fields.issuedAt}
 Expiration Time: ${fields.expirationTime}`;
-}
-
-/**
- * @param {unknown} value
- */
-function firstEvmAddress(value) {
-  if (!Array.isArray(value)) return "";
-  const address = value.find((item) => typeof item === "string" && /^0x[0-9a-f]{40}$/i.test(item));
-  return typeof address === "string" ? address : "";
 }
 
 /**
@@ -528,38 +546,16 @@ function missingWalletMessage(walletId) {
  * @param {"metamask" | "trust" | "tronlink" | "injected"} walletId
  */
 function mobileHelp(walletId) {
-  const page = encodeURIComponent(window.location.href);
-  if (walletId === "metamask") {
-    return isMobile() ? { href: `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}`, label: "Open in MetaMask" }
-      : { href: "https://metamask.io/download/", label: "Get MetaMask" };
-  }
-  if (walletId === "trust") {
-    return isMobile() ? { href: `https://link.trustwallet.com/open_url?coin_id=60&url=${page}`, label: "Open in Trust Wallet" }
-      : { href: "https://trustwallet.com/browser-extension", label: "Get Trust Wallet" };
-  }
-  if (walletId === "tronlink") return { href: "https://www.tronlink.org/", label: "Get TronLink" };
-  return null;
+  return walletHelpLink(walletId, {
+    mobile: isMobile(),
+    href: window.location.href,
+    host: window.location.host,
+    pathname: window.location.pathname,
+  });
 }
 
 function isMobile() {
   return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-}
-
-/**
- * @param {string} address
- */
-function shortenAddress(address) {
-  return address.length > 13 ? `${address.slice(0, 6)}…${address.slice(-5)}` : address;
-}
-
-/**
- * @param {string} first
- * @param {string} second
- */
-function sameAddress(first, second) {
-  return first.startsWith("0x") && second.startsWith("0x")
-    ? first.toLowerCase() === second.toLowerCase()
-    : first === second;
 }
 
 /**
