@@ -24,6 +24,14 @@ describe("wallet authentication API", () => {
     if (child && child.exitCode == null) child.kill("SIGTERM");
   });
 
+  it("frames static, JSON, HTML, text, and redirect responses without chunking", async () => {
+    await assertFramed(await fetch(`${base}/`), 200);
+    await assertFramed(await fetch(`${base}/api/auth/session`), 200);
+    await assertFramed(await fetch(`${base}/login`), 200);
+    await assertFramed(await fetch(`${base}/missing-page`), 404);
+    await assertFramed(await fetch(`${base}/logout`, { method: "POST", redirect: "manual" }), 303);
+  });
+
   it("creates, restores, protects, and clears an HTTP-only session", async () => {
     const account = privateKeyToAccount(`0x${randomBytes(32).toString("hex")}`);
     const headers = { Origin: base };
@@ -119,4 +127,16 @@ function previewUrl(processHandle) {
       resolve(match[1]);
     });
   });
+}
+
+/**
+ * @param {Response} response
+ * @param {number} status
+ */
+async function assertFramed(response, status) {
+  assert.equal(response.status, status);
+  assert.equal(response.headers.get("connection"), "close");
+  assert.equal(response.headers.has("transfer-encoding"), false);
+  const body = Buffer.from(await response.arrayBuffer());
+  assert.equal(response.headers.get("content-length"), String(body.byteLength));
 }

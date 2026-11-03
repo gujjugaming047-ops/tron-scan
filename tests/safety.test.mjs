@@ -28,6 +28,7 @@ describe("source safety", () => {
     assert.match(logic, /private key\|seed phrase\|mnemonic\|secret phrase/);
     const app = readFileSync(path.join(root, "src/app.js"), "utf8");
     const landing = readFileSync(path.join(root, "src/landing.js"), "utf8");
+    const server = readFileSync(path.join(root, "scripts/serve.mjs"), "utf8");
     const html = readFileSync(path.join(root, "index.html"), "utf8");
     assert.equal(app.match(/eth_requestAccounts/g)?.length, 1);
     assert.equal(app.match(/wallet_switchEthereumChain/g)?.length, 1);
@@ -43,6 +44,11 @@ describe("source safety", () => {
     assert.match(landing, /\/api\/auth\/session/);
     assert.match(landing, /accountsChanged/);
     assert.match(landing, /chainChanged/);
+    assert.equal(server.match(/response\.writeHead/g)?.length, 1);
+    assert.equal(server.match(/response\.end\(/g)?.length, 1);
+    assert.match(server, /finish\(response, 500,/);
+    assert.match(server, /"Content-Length": String\(payload\.byteLength\)/);
+    assert.match(server, /Connection: "close"/);
     assert.match(html, /Flash USDT Check/);
     assert.match(html, /“Flash USDT” is not an official Tether token type/);
     assert.match(html, /Never enter a seed phrase or private key/);

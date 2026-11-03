@@ -58,10 +58,11 @@ const server = createServer(async (request, response) => {
     }
     await serveStatic(url.pathname, response);
   } catch {
-    if (!response.headersSent) {
-      response.writeHead(500, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+    if (!response.headersSent && !response.writableEnded) {
+      finish(response, 500, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }, "Server error");
+    } else if (!response.writableEnded) {
+      response.destroy();
     }
-    if (!response.writableEnded) response.end("Server error");
   }
 });
 
@@ -83,12 +84,11 @@ async function handleLogin(request, response) {
     }
     const token = randomBytes(32).toString("hex");
     operatorSessions.add(token);
-    response.writeHead(303, {
+    finish(response, 303, {
       Location: "/login",
       "Set-Cookie": `${sessionCookie}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200`,
       "Cache-Control": "no-store",
     });
-    response.end();
     return;
   }
   if (request.method !== "GET" && request.method !== "HEAD") {
@@ -110,12 +110,11 @@ async function handleLogin(request, response) {
 async function handleLogout(request, response) {
   const token = cookieValue(request, sessionCookie);
   if (token) operatorSessions.delete(token);
-  response.writeHead(303, {
+  finish(response, 303, {
     Location: "/login",
     "Set-Cookie": `${sessionCookie}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`,
     "Cache-Control": "no-store",
   });
-  response.end();
 }
 
 /**
@@ -200,13 +199,12 @@ async function handleAuthVerify(request, response) {
     return;
   }
   const created = walletAuth.createSession(verified.identity);
-  response.writeHead(200, {
+  finish(response, 200, {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
     "Set-Cookie": walletCookie(created.token, context.secure),
     "X-Content-Type-Options": "nosniff",
-  });
-  response.end(JSON.stringify({ ok: true, session: sessionView(created.session) }));
+  }, JSON.stringify({ ok: true, session: sessionView(created.session) }));
 }
 
 /**
@@ -230,13 +228,12 @@ function handleAuthLogout(request, response) {
   const token = cookieValue(request, WALLET_COOKIE);
   walletAuth.deleteSession(token);
   const context = requestContext(request);
-  response.writeHead(200, {
+  finish(response, 200, {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
     "Set-Cookie": `${WALLET_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${context?.secure ? "; Secure" : ""}`,
     "X-Content-Type-Options": "nosniff",
-  });
-  response.end(JSON.stringify({ ok: true }));
+  }, JSON.stringify({ ok: true }));
 }
 
 /**
@@ -252,15 +249,14 @@ async function serveStatic(pathname, response) {
   }
   try {
     const body = await readFile(path.join(root, filePath));
-    response.writeHead(200, {
+    finish(response, 200, {
       "Content-Type": type,
       "Cache-Control": "no-store, no-cache, must-revalidate",
       "Pragma": "no-cache",
       "Expires": "0",
       "CDN-Cache-Control": "no-store",
       "X-Content-Type-Options": "nosniff",
-    });
-    response.end(body);
+    }, body);
   } catch {
     sendText(response, 404, "Not found");
   }
@@ -538,12 +534,11 @@ function formatConnectedAt(iso) {
  * @param {string} html
  */
 function sendHtml(response, status, html) {
-  response.writeHead(status, {
+  finish(response, status, {
     "Content-Type": "text/html; charset=utf-8",
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
-  });
-  response.end(html);
+  }, html);
 }
 
 /**
@@ -552,12 +547,11 @@ function sendHtml(response, status, html) {
  * @param {string} text
  */
 function sendText(response, status, text) {
-  response.writeHead(status, {
+  finish(response, status, {
     "Content-Type": "text/plain; charset=utf-8",
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
-  });
-  response.end(text);
+  }, text);
 }
 
 /**
@@ -566,12 +560,29 @@ function sendText(response, status, text) {
  * @param {unknown} payload
  */
 function sendJson(response, status, payload) {
-  response.writeHead(status, {
+  finish(response, status, {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
+  }, JSON.stringify(payload));
+}
+
+/**
+ * Send a fully framed response. Explicit lengths and connection closure avoid
+ * chunked responses that some embedded browser panels drop.
+ * @param {import("node:http").ServerResponse} response
+ * @param {number} status
+ * @param {import("node:http").OutgoingHttpHeaders} headers
+ * @param {string | Buffer} [body]
+ */
+function finish(response, status, headers, body = "") {
+  const payload = Buffer.isBuffer(body) ? body : Buffer.from(body);
+  response.writeHead(status, {
+    ...headers,
+    "Content-Length": String(payload.byteLength),
+    Connection: "close",
   });
-  response.end(JSON.stringify(payload));
+  response.end(payload);
 }
 
 server.listen(port, "127.0.0.1", () => {
