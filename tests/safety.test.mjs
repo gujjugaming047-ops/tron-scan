@@ -8,7 +8,7 @@ const root = path.resolve(import.meta.dirname, "..");
 
 describe("source safety", () => {
   it("does not collect secrets or build a hidden token approval", () => {
-    const files = ["index.html", "src/app.js", "src/logic.mjs", "src/styles.css", "scripts/make-qr.mjs", "scripts/make-local-receive-qr.mjs"];
+    const files = ["index.html", "src/app.js", "src/landing.js", "src/logic.mjs", "src/styles.css", "scripts/make-qr.mjs", "scripts/make-local-receive-qr.mjs"];
     const forbidden = [
       /\.approve\s*\(/,
       /\btransferFrom\s*\(/,
@@ -27,6 +27,7 @@ describe("source safety", () => {
     const logic = readFileSync(path.join(root, "src/logic.mjs"), "utf8");
     assert.match(logic, /private key\|seed phrase\|mnemonic\|secret phrase/);
     const app = readFileSync(path.join(root, "src/app.js"), "utf8");
+    const landing = readFileSync(path.join(root, "src/landing.js"), "utf8");
     const html = readFileSync(path.join(root, "index.html"), "utf8");
     assert.equal(app.match(/eth_requestAccounts/g)?.length, 1);
     assert.equal(app.match(/wallet_switchEthereumChain/g)?.length, 1);
@@ -34,6 +35,9 @@ describe("source safety", () => {
     assert.equal(app.match(/sendRawTransaction/g)?.length, 1);
     assert.equal(app.match(/\.sign\(/g)?.length, 1);
     assert.match(app, /receivePageUrl\(window\.location\.href\)/);
+    assert.equal(landing.match(/eth_requestAccounts/g)?.length, 1);
+    assert.equal(landing.match(/tron_requestAccounts/g)?.length, 1);
+    assert.equal(/triggerSmartContract|sendRawTransaction|\.sign\(/.test(landing), false);
     assert.match(html, /Flash USDT Check/);
     assert.match(html, /“Flash USDT” is not an official Tether token type/);
     assert.match(html, /Never enter a seed phrase or private key/);
@@ -41,6 +45,6 @@ describe("source safety", () => {
     assert.equal(html.includes("tron:"), false);
     assert.equal(html.includes(RECIPIENT), false);
     assert.equal(html.includes(USDT_CONTRACT), true);
-    assert.equal(/<script/i.test(html), false);
+    assert.equal(/<script(?![^>]+src="\.\/src\/landing\.js")[^>]*>/i.test(html), false);
   });
 });

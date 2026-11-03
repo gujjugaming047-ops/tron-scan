@@ -18,6 +18,7 @@ let writeQueue = Promise.resolve();
 const allowed = new Map([
   ["/index.html", "text/html; charset=utf-8"],
   ["/src/app.js", "text/javascript; charset=utf-8"],
+  ["/src/landing.js", "text/javascript; charset=utf-8"],
   ["/src/logic.mjs", "text/javascript; charset=utf-8"],
   ["/src/styles.css", "text/css; charset=utf-8"],
 ]);

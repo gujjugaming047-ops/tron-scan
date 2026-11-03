@@ -49,10 +49,10 @@
           <p class="option-label">Verification tool</p>
           <h2 id="option-title">Flash USDT Check</h2>
           <p>Inspect the transaction record, token contract, status, and amount on the TRON network.</p>
-          <a class="primary-action" href="#checker-details">
+          <button class="primary-action" id="open-wallet-flow" type="button" aria-haspopup="dialog">
             Start Flash USDT Check
             <span aria-hidden="true">→</span>
-          </a>
+          </button>
           <p class="privacy-note"><span aria-hidden="true">◇</span> Never enter a seed phrase or private key.</p>
         </article>
       </section>
@@ -79,8 +79,55 @@
       <p>Never send funds based on a screenshot or promise of a temporary balance.</p>
     </footer>
   </div>
+
+  <dialog class="wallet-dialog" id="wallet-dialog" aria-labelledby="wallet-title" aria-describedby="wallet-description">
+    <div class="dialog-topline">
+      <span class="dialog-step">Connect wallet</span>
+      <button class="dialog-close" id="close-wallet-flow" type="button" aria-label="Close wallet connection">×</button>
+    </div>
+    <div class="dialog-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24">
+        <path d="M4 7.5h14.5A1.5 1.5 0 0 1 20 9v9.5H5.5A2.5 2.5 0 0 1 3 16V6a2 2 0 0 1 2-2h12"/>
+        <path d="M15.5 12h6v4h-6a2 2 0 0 1 0-4Z"/>
+        <circle cx="16.5" cy="14" r=".6"/>
+      </svg>
+    </div>
+    <h2 id="wallet-title">Connect your TRON wallet</h2>
+    <p id="wallet-description">Choose a wallet to share your public TRON address. This checker never asks for a signature, recovery phrase, or private key.</p>
+
+    <div class="wallet-options" id="wallet-options">
+      <button class="wallet-option" id="connect-tronlink" type="button">
+        <span class="wallet-logo tronlink-logo" aria-hidden="true">T</span>
+        <span><strong>TronLink</strong><small>Recommended for TRON</small></span>
+        <span class="option-arrow" aria-hidden="true">→</span>
+      </button>
+      <button class="wallet-option" id="connect-trust" type="button">
+        <span class="wallet-logo trust-logo" aria-hidden="true">◆</span>
+        <span><strong>Trust Wallet</strong><small>Connect a TRON account</small></span>
+        <span class="option-arrow" aria-hidden="true">→</span>
+      </button>
+    </div>
+
+    <div class="wallet-status" id="wallet-status" role="status" aria-live="polite" hidden>
+      <span class="status-mark" id="status-mark" aria-hidden="true"></span>
+      <div>
+        <strong id="status-title"></strong>
+        <p id="status-message"></p>
+        <p class="connected-address" id="connected-address" hidden></p>
+        <a class="wallet-help" id="wallet-help" href="https://www.tronlink.org/" target="_blank" rel="noopener noreferrer" hidden>Get the official wallet ↗</a>
+      </div>
+    </div>
+
+    <div class="wallet-actions">
+      <button class="retry-button" id="retry-wallets" type="button" hidden>Choose another wallet</button>
+      <a href="#checker-details" id="continue-read-only">Continue without connecting</a>
+    </div>
+    <p class="dialog-safety"><span aria-hidden="true">✓</span> Read-only connection · No transaction request</p>
+  </dialog>
+
   <noscript>
-    <p class="noscript">This page works without JavaScript. Use the official TRONSCAN link to inspect public network data.</p>
+    <p class="noscript">JavaScript is required for wallet connection. You can still use the official TRONSCAN link to inspect public network data.</p>
   </noscript>
+  <script type="module" src="./src/landing.js"></script>
 </body>
 </html>
