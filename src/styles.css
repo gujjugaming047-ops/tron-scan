@@ -382,10 +382,22 @@ h1 em {
   text-transform: uppercase;
 }
 
-.linked-note {
-  margin: 14px 0 0;
+.linked-hub-note,
+.owner-hub-note {
+  margin-top: 10px;
+  font-size: 0.78rem;
   color: var(--muted);
-  font-size: 0.82rem;
+}
+
+.owner-hub-note .connected-address,
+.linked-hub-note .connected-address {
+  display: inline;
+  font-size: inherit;
+  word-break: break-all;
+}
+
+.linked-wallet-view .linked-card-visitor {
+  margin-top: 28px;
 }
 
 .asset-list {

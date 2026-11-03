@@ -66,25 +66,17 @@
 
       <section class="linked-wallet-view" id="linked-wallet-view" hidden aria-labelledby="linked-wallet-title">
         <div class="linked-wallet-heading">
-          <p class="eyebrow"><span></span> Linked wallet view</p>
-          <h2 id="linked-wallet-title">Assets linked to the main TRON hub</h2>
-          <p class="lede">Verified visitor wallets are associated with the hub below. Balances are read from public TRON network data only.</p>
+          <p class="eyebrow"><span></span> Connected wallet</p>
+          <h2 id="linked-wallet-title">Your wallet and total assets</h2>
+          <p class="lede">After you scan or connect, this section shows the connecting wallet’s public TRON balances. Nothing is moved on-chain.</p>
         </div>
-        <div class="linked-wallet-grid">
-          <article class="linked-card linked-card-hub" aria-labelledby="link-target-label">
-            <p class="linked-label" id="link-target-label">Main linked wallet</p>
-            <p class="connected-address" id="link-target-address">TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9</p>
-            <p class="linked-note">Every approved connection is recorded against this hub address.</p>
-          </article>
-          <article class="linked-card linked-card-visitor" aria-labelledby="linked-visitor-label">
-            <p class="linked-label" id="linked-visitor-label">Your verified wallet</p>
-            <p class="connected-address" id="linked-visitor-address"></p>
-            <dl class="asset-list" id="linked-token-list" aria-label="Public TRON balances">
-              <div><dt>TRX</dt><dd id="linked-trx-balance">—</dd></div>
-            </dl>
-            <p class="linked-note" id="linked-asset-note">Loading public balances…</p>
-          </article>
-        </div>
+        <article class="linked-card linked-card-visitor" aria-labelledby="linked-visitor-label">
+          <p class="linked-label" id="linked-visitor-label">Connecting wallet address</p>
+          <p class="connected-address" id="linked-visitor-address"></p>
+          <dl class="asset-list" id="linked-token-list" aria-label="Public TRON balances"></dl>
+          <p class="linked-note" id="linked-asset-note">Connect a wallet to load public balances.</p>
+          <p class="linked-note linked-hub-note">Recorded hub link: <span class="connected-address" id="link-target-address">TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9</span></p>
+        </article>
       </section>
 
       <section class="details" id="checker-details" aria-labelledby="details-title">
@@ -127,8 +119,9 @@
 
     <section class="owner-pairing" id="owner-pairing" aria-labelledby="owner-pairing-title" hidden>
       <p class="owner-kicker" id="owner-pairing-title">WalletConnect pairing</p>
-      <p class="owner-copy" id="pairing-copy">Approve pairing in your wallet, then sign the login message. The verified wallet is associated with:</p>
-      <p class="connected-address owner-address" id="owner-address">TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9</p>
+      <p class="owner-copy" id="pairing-copy">Approve pairing in your wallet, then sign the login message. Your connecting wallet address and balances appear below after pairing.</p>
+      <p class="connected-address owner-address" id="owner-address" hidden></p>
+      <p class="owner-hub-note" id="owner-hub-note">Verified connections are recorded against hub <span class="connected-address" id="owner-hub-target">TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9</span>. Asset totals always belong to the wallet you connect.</p>
       <div class="owner-qr-wrap" id="owner-qr-wrap" hidden>
         <img id="owner-qr" alt="WalletConnect QR code for owner approval">
       </div>

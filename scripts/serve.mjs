@@ -4,7 +4,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAuthState, SESSION_TTL_MS, WALLET_COOKIE, verifySignIn } from "../src/auth.mjs";
-import { CONNECTION_TARGET, RECIPIENT, signInRequestContext } from "../src/logic.mjs";
+import { CONNECTION_TARGET, RECIPIENT, isValidTronAddress, signInRequestContext } from "../src/logic.mjs";
 import { fetchTronWalletAssets } from "../src/tron-public.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -83,6 +83,10 @@ const server = createServer(async (request, response) => {
     }
     if (url.pathname === "/api/wallet-assets" && request.method === "GET") {
       await handleWalletAssets(request, response);
+      return;
+    }
+    if (url.pathname === "/api/public/wallet-assets" && request.method === "GET") {
+      await handlePublicWalletAssets(request, response, url);
       return;
     }
     await serveStatic(url.pathname, response);
@@ -398,6 +402,48 @@ function handleAuthLogout(request, response) {
 }
 
 /**
+ * @param {string} address
+ * @param {Awaited<ReturnType<typeof fetchTronWalletAssets>> & { ok: true }} assets
+ */
+function serializeWalletAssetsResponse(address, assets) {
+  return {
+    ok: true,
+    connectionTarget: CONNECTION_TARGET,
+    address,
+    assets: {
+      trxSun: assets.trxSun,
+      usdtUnits: assets.usdtUnits,
+      trxDisplay: assets.trxDisplay,
+      usdtDisplay: assets.usdtDisplay,
+      tokens: assets.tokens,
+    },
+  };
+}
+
+/**
+ * @param {import("node:http").IncomingMessage} request
+ * @param {import("node:http").ServerResponse} response
+ * @param {URL} url
+ */
+async function handlePublicWalletAssets(request, response, url) {
+  if (!requestContext(request)) {
+    sendJson(response, 403, { ok: false, error: "The request origin is not allowed." });
+    return;
+  }
+  const address = (url.searchParams.get("address") || "").trim();
+  if (!(await isValidTronAddress(address))) {
+    sendJson(response, 400, { ok: false, error: "The TRON address is invalid." });
+    return;
+  }
+  const assets = await fetchTronWalletAssets(address, { apiBase: process.env.TRON_API_BASE });
+  if (!assets.ok) {
+    sendJson(response, 502, { ok: false, error: assets.error });
+    return;
+  }
+  sendJson(response, 200, serializeWalletAssetsResponse(address, assets));
+}
+
+/**
  * @param {import("node:http").IncomingMessage} request
  * @param {import("node:http").ServerResponse} response
  */
@@ -412,18 +458,7 @@ async function handleWalletAssets(request, response) {
     sendJson(response, 502, { ok: false, error: assets.error });
     return;
   }
-  sendJson(response, 200, {
-    ok: true,
-    connectionTarget: CONNECTION_TARGET,
-    address: session.address,
-    assets: {
-      trxSun: assets.trxSun,
-      usdtUnits: assets.usdtUnits,
-      trxDisplay: assets.trxDisplay,
-      usdtDisplay: assets.usdtDisplay,
-      tokens: assets.tokens,
-    },
-  });
+  sendJson(response, 200, serializeWalletAssetsResponse(session.address, assets));
 }
 
 /**

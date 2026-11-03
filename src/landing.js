@@ -57,6 +57,8 @@ const ui = {
   pairingTitle: requiredElement("owner-pairing-title"),
   pairingCopy: requiredElement("pairing-copy"),
   ownerAddress: requiredElement("owner-address"),
+  ownerHubNote: requiredElement("owner-hub-note"),
+  ownerHubTarget: requiredElement("owner-hub-target"),
   ownerQrWrap: requiredElement("owner-qr-wrap"),
   ownerQr: requiredImage("owner-qr"),
   ownerDeepLink: requiredAnchor("owner-deep-link"),
@@ -240,9 +242,10 @@ async function connectWalletConnect() {
   setControlsDisabled(true);
   configurePairingPanel(
     "Connect visitor wallet",
-    "Scan with the visitor wallet. The verified connection will be associated with this TRON address:",
-    CONNECTION_TARGET,
+    "Scan the QR code with your TRON wallet. Your address and public balances load automatically after pairing.",
   );
+  ui.ownerHubTarget.textContent = CONNECTION_TARGET;
+  ui.linkTargetAddress.textContent = CONNECTION_TARGET;
   showOwnerPairing("Preparing the visitor WalletConnect QR code…");
   ui.cancelOwnerPairing.hidden = false;
   ui.cancelOwnerPairing.textContent = "Cancel pairing";
@@ -264,6 +267,8 @@ async function connectWalletConnect() {
       },
     });
     assertVisitorPairingActive(attempt);
+    showVisitorWalletAddress(pairing.address);
+    void presentConnectedWallet(pairing.address, { useSessionAssets: false });
     setOwnerPairingStatus("Visitor wallet paired. Sign the login message to verify this public address.", "pending");
     const nonce = await fetchJson("/api/auth/nonce");
     assertVisitorPairingActive(attempt);
@@ -391,11 +396,19 @@ function assertVisitorPairingActive(attempt) {
 /**
  * @param {string} title
  * @param {string} copy
- * @param {string} address
  */
-function configurePairingPanel(title, copy, address) {
+function configurePairingPanel(title, copy) {
   ui.pairingTitle.textContent = title;
   ui.pairingCopy.textContent = copy;
+  ui.ownerAddress.hidden = true;
+  ui.ownerAddress.textContent = "";
+}
+
+/**
+ * @param {string} address
+ */
+function showVisitorWalletAddress(address) {
+  ui.ownerAddress.hidden = false;
   ui.ownerAddress.textContent = address;
 }
 
@@ -685,36 +698,48 @@ function showConnected(authenticated) {
   arrow.setAttribute("aria-hidden", "true");
   arrow.textContent = "→";
   ui.open.append(arrow);
-  void refreshLinkedWalletView(authenticated);
+  if (authenticated.network === "tron") {
+    void presentConnectedWallet(authenticated.address, { useSessionAssets: true });
+  } else {
+    ui.linkedWalletView.hidden = true;
+  }
   if (ui.dialog.open) {
     showState({
       kind: "success",
       title: "Wallet verified",
-      message: `${authenticated.network === "tron" ? "TRON" : "EVM"} session connected to ${authenticated.connectionTarget || CONNECTION_TARGET} until ${new Date(authenticated.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. No transaction was requested.`,
+      message: authenticated.network === "tron"
+        ? `TRON wallet ${shortenWalletAddress(authenticated.address)} connected. Public balances below are for this wallet until ${new Date(authenticated.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. No transaction was requested.`
+        : `EVM session connected until ${new Date(authenticated.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. No transaction was requested.`,
       address: authenticated.address,
     });
   }
 }
 
 /**
- * @param {{ address: string, network: "evm" | "tron", connectionTarget?: string } | null} authenticated
+ * @param {string} address
+ * @param {{ useSessionAssets?: boolean }} [options]
  */
-async function refreshLinkedWalletView(authenticated) {
+async function presentConnectedWallet(address, options = {}) {
   ui.linkTargetAddress.textContent = CONNECTION_TARGET;
-  if (!authenticated || authenticated.network !== "tron") {
+  if (!address) {
     ui.linkedWalletView.hidden = true;
     return;
   }
   ui.linkedWalletView.hidden = false;
-  ui.linkedVisitorAddress.textContent = authenticated.address;
+  ui.linkedVisitorAddress.textContent = address;
   renderLinkedTokenList([{ standard: "TRX", symbol: "TRX", name: "TRON", display: "…" }]);
-  ui.linkedAssetNote.textContent = "Loading public TRON balances…";
-  const assets = await fetchJson("/api/wallet-assets");
+  ui.linkedAssetNote.textContent = "Loading public TRON balances for your connecting wallet…";
+  const assetsPath = options.useSessionAssets
+    ? "/api/wallet-assets"
+    : `/api/public/wallet-assets?address=${encodeURIComponent(address)}`;
+  const assets = await fetchJson(assetsPath);
   if (!assets.ok || !assets.body?.assets) {
     renderLinkedTokenList([]);
     ui.linkedAssetNote.textContent = assets.body?.error || "Public balance data could not be loaded.";
     return;
   }
+  const resolvedAddress = assets.body.address || address;
+  ui.linkedVisitorAddress.textContent = resolvedAddress;
   const tokens = Array.isArray(assets.body.assets.tokens) ? assets.body.assets.tokens : [];
   renderLinkedTokenList(tokens.length ? tokens : [{
     standard: "TRX",
@@ -722,7 +747,7 @@ async function refreshLinkedWalletView(authenticated) {
     name: "TRON",
     display: assets.body.assets.trxDisplay || "0 TRX",
   }]);
-  ui.linkedAssetNote.textContent = "Read-only TRX, TRC-10, and TRC-20 balances from public TRON network data. No funds were moved.";
+  ui.linkedAssetNote.textContent = `Read-only totals for ${shortenWalletAddress(resolvedAddress)} from public TRON network data. Hub link ${shortenWalletAddress(CONNECTION_TARGET)} is recorded separately.`;
 }
 
 /**
@@ -761,7 +786,9 @@ function clearConnectedUi() {
   ui.linkedWalletView.hidden = true;
   ui.linkedVisitorAddress.textContent = "";
   renderLinkedTokenList([]);
-  ui.linkedAssetNote.textContent = "Loading public balances…";
+  ui.linkedAssetNote.textContent = "Connect a wallet to load public balances.";
+  ui.ownerAddress.hidden = true;
+  ui.ownerAddress.textContent = "";
   ui.open.replaceChildren("Start Flash USDT Check");
   const arrow = document.createElement("span");
   arrow.setAttribute("aria-hidden", "true");

@@ -126,6 +126,15 @@ describe("wallet authentication API", () => {
     assert.match(assetBody.assets.usdtDisplay, /USDT$/);
     assert.ok(Array.isArray(assetBody.assets.tokens));
     assert.ok(assetBody.assets.tokens.some((/** @type {{ standard?: string }} */ token) => token.standard === "TRX"));
+    assert.equal(assetBody.address, account.address.base58);
+    assert.notEqual(assetBody.address, CONNECTION_TARGET);
+    const blockedPublic = await fetch(
+      `${base}/api/public/wallet-assets?address=${encodeURIComponent(account.address.base58)}`,
+      { headers: { Origin: "https://attacker.example" } },
+    );
+    assert.equal(blockedPublic.status, 403);
+    const invalidPublic = await fetch(`${base}/api/public/wallet-assets?address=not-a-tron-address`, { headers });
+    assert.equal(invalidPublic.status, 400);
   });
 
   it("rejects a mismatched browser origin", async () => {
