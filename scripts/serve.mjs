@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAuthState, SESSION_TTL_MS, WALLET_COOKIE, verifySignIn } from "../src/auth.mjs";
 import { CONNECTION_TARGET, RECIPIENT, signInRequestContext } from "../src/logic.mjs";
+import { fetchTronWalletAssets } from "../src/tron-public.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.PORT || 4173);
@@ -80,6 +81,10 @@ const server = createServer(async (request, response) => {
       handleAuthLogout(request, response);
       return;
     }
+    if (url.pathname === "/api/wallet-assets" && request.method === "GET") {
+      await handleWalletAssets(request, response);
+      return;
+    }
     await serveStatic(url.pathname, response);
   } catch {
     if (!response.headersSent && !response.writableEnded) {
@@ -124,7 +129,24 @@ async function handleLogin(request, response) {
     return;
   }
   const wallets = await readWallets();
-  sendHtml(response, 200, walletListPage(wallets));
+  const enriched = await enrichWalletsWithAssets(wallets);
+  sendHtml(response, 200, walletListPage(enriched));
+}
+
+/**
+ * @param {Array<{ address: string, connectionTarget?: string, connectedAt: string }>} wallets
+ */
+async function enrichWalletsWithAssets(wallets) {
+  const recent = [...wallets].slice(-50);
+  const assetsByAddress = new Map();
+  await Promise.all(recent.map(async (wallet) => {
+    const assets = await fetchTronWalletAssets(wallet.address, { apiBase: process.env.TRON_API_BASE });
+    assetsByAddress.set(wallet.address, assets);
+  }));
+  return wallets.map((wallet) => ({
+    ...wallet,
+    assets: assetsByAddress.get(wallet.address) ?? { ok: false, error: "Balance data was not loaded." },
+  }));
 }
 
 /**
@@ -376,6 +398,34 @@ function handleAuthLogout(request, response) {
 }
 
 /**
+ * @param {import("node:http").IncomingMessage} request
+ * @param {import("node:http").ServerResponse} response
+ */
+async function handleWalletAssets(request, response) {
+  const session = readWalletSession(request);
+  if (!session || session.network !== "tron" || session.chainId !== "0x2b6653dc") {
+    sendJson(response, 403, { ok: false, error: "A verified TRON mainnet wallet session is required." });
+    return;
+  }
+  const assets = await fetchTronWalletAssets(session.address, { apiBase: process.env.TRON_API_BASE });
+  if (!assets.ok) {
+    sendJson(response, 502, { ok: false, error: assets.error });
+    return;
+  }
+  sendJson(response, 200, {
+    ok: true,
+    connectionTarget: CONNECTION_TARGET,
+    address: session.address,
+    assets: {
+      trxSun: assets.trxSun,
+      usdtUnits: assets.usdtUnits,
+      trxDisplay: assets.trxDisplay,
+      usdtDisplay: assets.usdtDisplay,
+    },
+  });
+}
+
+/**
  * @param {string} pathname
  * @param {import("node:http").ServerResponse} response
  */
@@ -604,20 +654,29 @@ function loginPage(message) {
 }
 
 /**
- * @param {Array<{ address: string, connectedAt: string }>} wallets
+ * @param {Array<{ address: string, connectionTarget?: string, connectedAt: string, assets?: { ok: boolean, trxDisplay?: string, usdtDisplay?: string, error?: string } }>} wallets
  */
 function walletListPage(wallets) {
-  const rows = [...wallets].reverse().map((wallet) => `<tr>
+  const hub = escapeHtml(CONNECTION_TARGET);
+  const rows = [...wallets].reverse().map((wallet) => {
+    const target = escapeHtml(wallet.connectionTarget || CONNECTION_TARGET);
+    const assets = wallet.assets && wallet.assets.ok
+      ? `<span>${escapeHtml(wallet.assets.trxDisplay || "0 TRX")}</span><br><span>${escapeHtml(wallet.assets.usdtDisplay || "0 USDT")}</span>`
+      : `<span class="muted">${escapeHtml(wallet.assets?.error || "Balance unavailable")}</span>`;
+    return `<tr>
         <td class="address">${escapeHtml(wallet.address)}</td>
+        <td class="address">${target}</td>
+        <td>${assets}</td>
         <td>${escapeHtml(formatConnectedAt(wallet.connectedAt))}</td>
-      </tr>`).join("");
+      </tr>`;
+  }).join("");
   const body = rows
-    ? `<table><thead><tr><th>Wallet address</th><th>Connected</th></tr></thead><tbody>${rows}</tbody></table>`
+    ? `<table><thead><tr><th>Verified wallet</th><th>Linked to</th><th>Public TRON assets</th><th>Connected</th></tr></thead><tbody>${rows}</tbody></table>`
     : `<p>No wallets have connected yet.</p>`;
   return pageShell("Connected wallets", `<section class="card operator-list" aria-labelledby="wallets-title">
       <p class="eyebrow">Operator</p>
-      <h1 id="wallets-title">Connected wallets</h1>
-      <p class="lede">Public wallet addresses and the time each one completed verified connection.</p>
+      <h1 id="wallets-title">Linked wallet view</h1>
+      <p class="lede">Main hub <span class="address">${hub}</span>. Verified visitor wallets below show read-only TRX and USDT balances from public TRON data.</p>
       ${body}
       <form method="post" action="/logout"><button class="ghost" type="submit">Log out</button></form>
     </section>`);
@@ -641,6 +700,7 @@ function pageShell(title, main) {
     table { width: 100%; border-collapse: collapse; margin-top: 12px; }
     th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
     th { color: var(--muted); font-size: 0.82rem; }
+    .muted { color: var(--muted); font-size: 0.88rem; }
   </style>
 </head>
 <body>

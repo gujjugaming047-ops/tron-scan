@@ -16,7 +16,7 @@ WALLETCONNECT_PROJECT_ID=your_real_project_id npm start
 
 The app does not contain or invent a project ID. Choosing **WalletConnect** displays a QR code and mobile `wc:` link. The wallet approves the pairing and signs a nonce-bound login message. The message is not a transaction and cannot move funds. After the server verifies that signature, it records the verified public TRON wallet as connected to `TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9`. WalletConnect pairs the wallet with the DApp—it cannot create a wallet-to-wallet connection—so this target is an explicit server-side association, not a transaction or token transfer.
 
-MetaMask, Trust Wallet, and TronLink follow the same sign-in pattern after account approval. Verified TRON mainnet sessions receive the same connection target association.
+MetaMask, Trust Wallet, and TronLink follow the same sign-in pattern after account approval. Verified TRON mainnet sessions receive the same connection target association and show read-only TRX and USDT balances from public TRON network data on the linked wallet view.
 
 Run `npm start` and open `http://127.0.0.1:4173` to preview it. Run `npm run check` for syntax, type, unit, safety, and build checks. The authentication API runs in the Node preview server; production deployment therefore needs the same server process, HTTPS, `WALLETCONNECT_PROJECT_ID`, and (when behind a proxy) an optional `PUBLIC_ORIGIN=https://your-host` to allow that hostname in addition to local preview and tunnel hosts (`*.trycloudflare.com`, `*.loca.lt`). Sign-in messages are always bound to the browser `Origin` header that loaded the page.
 

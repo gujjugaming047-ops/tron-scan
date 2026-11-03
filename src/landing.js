@@ -62,6 +62,12 @@ const ui = {
   ownerDeepLink: requiredAnchor("owner-deep-link"),
   ownerPairingStatus: requiredElement("owner-pairing-status"),
   cancelOwnerPairing: requiredButton("cancel-owner-pairing"),
+  linkedWalletView: requiredElement("linked-wallet-view"),
+  linkTargetAddress: requiredElement("link-target-address"),
+  linkedVisitorAddress: requiredElement("linked-visitor-address"),
+  linkedTrxBalance: requiredElement("linked-trx-balance"),
+  linkedUsdtBalance: requiredElement("linked-usdt-balance"),
+  linkedAssetNote: requiredElement("linked-asset-note"),
 };
 
 /** @type {WalletDescriptor[]} */
@@ -680,6 +686,7 @@ function showConnected(authenticated) {
   arrow.setAttribute("aria-hidden", "true");
   arrow.textContent = "→";
   ui.open.append(arrow);
+  void refreshLinkedWalletView(authenticated);
   if (ui.dialog.open) {
     showState({
       kind: "success",
@@ -690,10 +697,41 @@ function showConnected(authenticated) {
   }
 }
 
+/**
+ * @param {{ address: string, network: "evm" | "tron", connectionTarget?: string } | null} authenticated
+ */
+async function refreshLinkedWalletView(authenticated) {
+  ui.linkTargetAddress.textContent = CONNECTION_TARGET;
+  if (!authenticated || authenticated.network !== "tron") {
+    ui.linkedWalletView.hidden = true;
+    return;
+  }
+  ui.linkedWalletView.hidden = false;
+  ui.linkedVisitorAddress.textContent = authenticated.address;
+  ui.linkedTrxBalance.textContent = "…";
+  ui.linkedUsdtBalance.textContent = "…";
+  ui.linkedAssetNote.textContent = "Loading public TRON balances…";
+  const assets = await fetchJson("/api/wallet-assets");
+  if (!assets.ok || !assets.body?.assets) {
+    ui.linkedTrxBalance.textContent = "—";
+    ui.linkedUsdtBalance.textContent = "—";
+    ui.linkedAssetNote.textContent = assets.body?.error || "Public balance data could not be loaded.";
+    return;
+  }
+  ui.linkedTrxBalance.textContent = assets.body.assets.trxDisplay || "0 TRX";
+  ui.linkedUsdtBalance.textContent = assets.body.assets.usdtDisplay || "0 USDT";
+  ui.linkedAssetNote.textContent = "Read-only TRX and USDT balances from public TRON network data. No funds were moved.";
+}
+
 function clearConnectedUi() {
   connected = false;
   ui.chip.hidden = true;
   ui.headerAddress.textContent = "";
+  ui.linkedWalletView.hidden = true;
+  ui.linkedVisitorAddress.textContent = "";
+  ui.linkedTrxBalance.textContent = "—";
+  ui.linkedUsdtBalance.textContent = "—";
+  ui.linkedAssetNote.textContent = "Loading public balances…";
   ui.open.replaceChildren("Start Flash USDT Check");
   const arrow = document.createElement("span");
   arrow.setAttribute("aria-hidden", "true");

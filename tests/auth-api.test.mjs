@@ -114,6 +114,16 @@ describe("wallet authentication API", () => {
     const latest = stored.wallets.at(-1);
     assert.equal(latest.address, account.address.base58);
     assert.equal(latest.connectionTarget, CONNECTION_TARGET);
+    const sessionCookie = (verification.headers.get("set-cookie") || "").match(/wallet_session=[^;]+/)?.[0] || "";
+    assert.ok(sessionCookie);
+    const assets = await fetch(`${base}/api/wallet-assets`, {
+      headers: { ...headers, Cookie: sessionCookie },
+    });
+    assert.equal(assets.status, 200);
+    const assetBody = await assets.json();
+    assert.equal(assetBody.connectionTarget, CONNECTION_TARGET);
+    assert.match(assetBody.assets.trxDisplay, /TRX$/);
+    assert.match(assetBody.assets.usdtDisplay, /USDT$/);
   });
 
   it("rejects a mismatched browser origin", async () => {

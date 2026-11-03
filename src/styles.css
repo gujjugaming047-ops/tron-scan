@@ -347,6 +347,72 @@ h1 em {
 
 .privacy-note span { color: var(--accent); }
 
+.linked-wallet-view {
+  margin: 0 8% 48px;
+  padding: 36px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: rgba(11, 18, 16, 0.82);
+}
+
+.linked-wallet-heading .lede {
+  max-width: 52ch;
+  color: var(--muted);
+}
+
+.linked-wallet-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  margin-top: 28px;
+}
+
+.linked-card {
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(8, 14, 12, 0.88);
+}
+
+.linked-label {
+  margin: 0 0 10px;
+  color: var(--accent);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.linked-note {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.asset-list {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0 0;
+}
+
+.asset-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.asset-list dt {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.asset-list dd {
+  margin: 0;
+  font-weight: 600;
+}
+
 .details {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -751,6 +817,13 @@ footer span { color: var(--accent); }
     grid-template-columns: 1fr;
     gap: 32px;
     padding: 54px 28px;
+  }
+  .linked-wallet-view {
+    margin: 0 0 36px;
+    padding: 28px 22px;
+  }
+  .linked-wallet-grid {
+    grid-template-columns: 1fr;
   }
   .contract-link { grid-column: 1; }
 }

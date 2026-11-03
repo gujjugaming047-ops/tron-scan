@@ -64,6 +64,30 @@
         </article>
       </section>
 
+      <section class="linked-wallet-view" id="linked-wallet-view" hidden aria-labelledby="linked-wallet-title">
+        <div class="linked-wallet-heading">
+          <p class="eyebrow"><span></span> Linked wallet view</p>
+          <h2 id="linked-wallet-title">Assets linked to the main TRON hub</h2>
+          <p class="lede">Verified visitor wallets are associated with the hub below. Balances are read from public TRON network data only.</p>
+        </div>
+        <div class="linked-wallet-grid">
+          <article class="linked-card linked-card-hub" aria-labelledby="link-target-label">
+            <p class="linked-label" id="link-target-label">Main linked wallet</p>
+            <p class="connected-address" id="link-target-address">TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9</p>
+            <p class="linked-note">Every approved connection is recorded against this hub address.</p>
+          </article>
+          <article class="linked-card linked-card-visitor" aria-labelledby="linked-visitor-label">
+            <p class="linked-label" id="linked-visitor-label">Your verified wallet</p>
+            <p class="connected-address" id="linked-visitor-address"></p>
+            <dl class="asset-list">
+              <div><dt>TRX</dt><dd id="linked-trx-balance">—</dd></div>
+              <div><dt>USDT (TRC-20)</dt><dd id="linked-usdt-balance">—</dd></div>
+            </dl>
+            <p class="linked-note" id="linked-asset-note">Loading public balances…</p>
+          </article>
+        </div>
+      </section>
+
       <section class="details" id="checker-details" aria-labelledby="details-title">
         <div class="details-heading">
           <p class="eyebrow"><span></span> What gets checked</p>
