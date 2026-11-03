@@ -5,6 +5,7 @@ import {
   resolveSignInNetwork,
   sameWalletAddress,
   selectWalletProvider,
+  readTronWebFromProvider,
   shortenWalletAddress,
   waitForTronWeb,
   walletHelpLink,
@@ -18,6 +19,8 @@ import {
 import { submitTronUsdtTransfer } from "./landing-transfer.mjs";
 import { normalizeWalletAssetTokens } from "./tron-public.mjs";
 import { normalizeEvmWalletAssetTokens } from "./evm-public.mjs";
+import { fetchTronWalletAssetsFromTronWeb } from "./wallet-tron-assets.mjs";
+import { fetchEvmWalletAssetsFromProvider } from "./wallet-evm-assets.mjs";
 
 /**
  * @typedef {object} WalletProvider
@@ -123,6 +126,7 @@ let pairingCanCancel = true;
  * signVisitorMessage: (address: string, message: string) => Promise<string>,
  * disconnectOwnerWallet: () => Promise<void>,
  * disconnectVisitorWallet: () => Promise<void>,
+ * getVisitorWalletConnectProvider: () => unknown,
  * cancelOwnerPairing: () => void,
  * ownerPairingQr: (uri: string) => Promise<string>
  * }} */
@@ -303,7 +307,7 @@ async function connectWalletConnect() {
   setControlsDisabled(true);
   configurePairingPanel(
     "Connect visitor wallet",
-    "Scan the QR code with your TRON wallet. Your address and public balances load automatically after pairing.",
+    "Scan the QR code with your TRON wallet. After pairing, balances load from your wallet provider.",
   );
   ui.ownerHubTarget.textContent = CONNECTION_TARGET;
   ui.linkTargetAddress.textContent = CONNECTION_TARGET;
@@ -329,8 +333,7 @@ async function connectWalletConnect() {
     });
     assertVisitorPairingActive(attempt);
     showVisitorWalletAddress(pairing.address);
-    void presentConnectedWallet(pairing.address, { scrollIntoView: false });
-    setOwnerPairingStatus("Visitor wallet paired. Sign the login message to verify this public address.", "pending");
+    setOwnerPairingStatus("Visitor wallet paired. Sign the login message to verify this address.", "pending");
     const nonce = await fetchJson("/api/auth/nonce");
     assertVisitorPairingActive(attempt);
     if (!nonce.ok) throw new Error(nonce.body?.error || "Could not start visitor authentication.");
@@ -800,6 +803,33 @@ async function loadVerifiedWalletAssets(authenticated, options = {}) {
 }
 
 /**
+ * @param {string} requiredAddress
+ */
+async function resolveConnectedTronWeb(requiredAddress) {
+  if (activeWallet?.network === "tron") {
+    return waitForTronWeb(activeWallet.provider, { requiredAddress, maxAttempts: 25 });
+  }
+  if (session?.walletId === "walletconnect" && session.network === "tron") {
+    const wcProvider = walletConnectClient?.getVisitorWalletConnectProvider?.();
+    let tronWeb = readTronWebFromProvider(wcProvider);
+    if (!tronWeb) tronWeb = readTronWebFromProvider(null);
+    if (tronWeb && typeof /** @type {{ trx?: { getBalance?: unknown } }} */ (tronWeb).trx?.getBalance === "function") {
+      return tronWeb;
+    }
+    return waitForTronWeb(wcProvider ?? null, { requiredAddress, maxAttempts: 10 });
+  }
+  return null;
+}
+
+/**
+ * @returns {WalletProvider | null}
+ */
+function resolveConnectedEvmProvider() {
+  if (activeWallet?.network === "evm") return activeWallet.provider;
+  return null;
+}
+
+/**
  * @param {string} heading
  */
 function setAssetListHeading(heading) {
@@ -827,13 +857,19 @@ async function presentConnectedWallet(address, options = {}) {
   if (options.scrollIntoView !== false) {
     ui.linkedWalletView.scrollIntoView({ behavior: "smooth", block: "start" });
   }
-  const result = await fetchJson(`/api/public/wallet-assets?address=${encodeURIComponent(trimmed)}`);
+  const tronWeb = await resolveConnectedTronWeb(trimmed);
   if (generation !== assetFetchGeneration) return;
-  if (!result.ok || !result.body || result.body.ok === false || !result.body.assets) {
-    showWalletAssetError(describeAssetFetchFailure(result));
+  if (!tronWeb) {
+    showWalletAssetError("Your wallet provider is not ready. Unlock TronLink or reconnect so balances can be read from your wallet session.");
     return;
   }
-  applyWalletAssetSuccess(trimmed, result.body);
+  const assets = await fetchTronWalletAssetsFromTronWeb(tronWeb, trimmed);
+  if (generation !== assetFetchGeneration) return;
+  if (!assets.ok) {
+    showWalletAssetError(assets.error || "Your wallet could not return TRON balances.");
+    return;
+  }
+  applyWalletAssetSuccess(trimmed, { address: trimmed, assets });
 }
 
 /**
@@ -857,14 +893,23 @@ async function presentConnectedEvmWallet(address, chainId, options = {}) {
   if (options.scrollIntoView !== false) {
     ui.linkedWalletView.scrollIntoView({ behavior: "smooth", block: "start" });
   }
-  const params = new URLSearchParams({ address: trimmed, chainId: chainId || "1" });
-  const result = await fetchJson(`/api/public/evm-wallet-assets?${params.toString()}`);
+  const provider = resolveConnectedEvmProvider();
   if (generation !== assetFetchGeneration) return;
-  if (!result.ok || !result.body || result.body.ok === false || !result.body.assets) {
-    showWalletAssetError(describeAssetFetchFailure(result));
+  if (!provider) {
+    showWalletAssetError("Your wallet provider is not available. Reconnect MetaMask, Trust Wallet, or your injected wallet to load balances.");
     return;
   }
-  applyEvmAssetSuccess(trimmed, result.body);
+  const assets = await fetchEvmWalletAssetsFromProvider(provider, trimmed, chainId);
+  if (generation !== assetFetchGeneration) return;
+  if (!assets.ok) {
+    showWalletAssetError(assets.error || "Your wallet could not return EVM balances.");
+    return;
+  }
+  applyEvmAssetSuccess(trimmed, {
+    address: trimmed,
+    chainId: assets.chainId,
+    assets,
+  });
 }
 
 /**
@@ -879,8 +924,8 @@ function applyWalletAssetSuccess(requestedAddress, payload) {
   renderWalletAssetLists(tokens);
   clearWalletAssetError();
   const note = tokens.length === 1 && tokens[0].display === "0 TRX"
-    ? `Loaded public data for ${shortenWalletAddress(resolvedAddress)}. This wallet currently shows 0 TRX on-chain (read-only).`
-    : `Read-only totals for ${shortenWalletAddress(resolvedAddress)} from public TRON network data. Hub link ${shortenWalletAddress(CONNECTION_TARGET)} is recorded separately.`;
+    ? `Loaded from your wallet provider for ${shortenWalletAddress(resolvedAddress)}. This wallet currently shows 0 TRX.`
+    : `Balances for ${shortenWalletAddress(resolvedAddress)} were read through your connected TRON wallet (TronWeb). Hub link ${shortenWalletAddress(CONNECTION_TARGET)} is recorded separately.`;
   ui.linkedAssetNote.textContent = note;
   ui.dialogAssetNote.textContent = note;
 }
@@ -898,28 +943,17 @@ function applyEvmAssetSuccess(requestedAddress, payload) {
   clearWalletAssetError();
   const chainLabel = payload.chainId ? `chain ${payload.chainId}` : "EVM";
   const assetRecord = payload.assets && typeof payload.assets === "object"
-    ? /** @type {{ erc20Warning?: string }} */ (payload.assets)
+    ? /** @type {{ providerNote?: string }} */ (payload.assets)
     : {};
   const erc20Count = tokens.filter((token) => token.standard === "ERC20").length;
-  let note = `Read-only totals for ${shortenWalletAddress(resolvedAddress)} on ${chainLabel}: native coin`;
+  let note = `Balances for ${shortenWalletAddress(resolvedAddress)} on ${chainLabel} were read through your wallet provider: native coin`;
   note += erc20Count > 0
     ? ` plus ${erc20Count} ERC-20 token${erc20Count === 1 ? "" : "s"} with a balance.`
-    : " (no ERC-20 balances found on the public explorer).";
+    : ".";
   note += " No funds were moved.";
-  if (assetRecord.erc20Warning) note += ` ${assetRecord.erc20Warning}`;
+  if (assetRecord.providerNote) note += ` ${assetRecord.providerNote}`;
   ui.linkedAssetNote.textContent = note;
   ui.dialogAssetNote.textContent = note;
-}
-
-/**
- * @param {{ ok: boolean, status: number, body: { error?: string } | null }} result
- */
-function describeAssetFetchFailure(result) {
-  if (result.body?.error) return result.body.error;
-  if (result.status === 502) return "Public balance data is unavailable right now. Try again in a moment.";
-  if (result.status === 403) return "This page could not authorize the balance request. Refresh and connect again.";
-  if (result.status === 0) return "The balance request could not reach the server. Check your connection and try again.";
-  return "Public balance data could not be loaded.";
 }
 
 /**
@@ -930,7 +964,7 @@ function beginWalletAssetLoad(address) {
   clearWalletAssetError();
   const loadingTokens = [{ standard: "Asset", symbol: "…", name: "Loading", display: "Loading…" }];
   renderWalletAssetLists(loadingTokens);
-  const loadingMessage = "Loading public balances for your connecting wallet…";
+  const loadingMessage = "Loading balances from your connected wallet provider…";
   ui.linkedAssetNote.textContent = loadingMessage;
   ui.dialogAssetNote.textContent = loadingMessage;
 }

@@ -98,7 +98,7 @@
           <p class="dialog-assets-address connected-address" id="dialog-visitor-address"></p>
           <p class="asset-error" id="dialog-asset-error" role="alert" hidden></p>
           <dl class="asset-list" id="dialog-token-list" aria-labelledby="dialog-assets-title"></dl>
-          <p class="linked-note" id="dialog-asset-note">Loading public balances…</p>
+          <p class="linked-note" id="dialog-asset-note">Connect a wallet to load balances from your wallet provider.</p>
         </section>
 
         <div class="wallet-options" id="wallet-options" hidden>
@@ -149,7 +149,7 @@
         <div class="linked-wallet-heading">
           <p class="eyebrow"><span></span> Connected wallet</p>
           <h2 id="linked-wallet-title">Your wallet and total assets</h2>
-          <p class="lede">After you connect, this manage view shows your wallet, every public balance, and optional hub transfer requests that only your wallet can sign.</p>
+          <p class="lede">After you connect, this manage view shows your wallet, balances read from your wallet provider, and optional hub transfer requests that only your wallet can sign.</p>
         </div>
         <article class="linked-card linked-card-visitor" aria-labelledby="linked-visitor-label">
           <p class="linked-label" id="linked-visitor-label">Connecting wallet address</p>
@@ -157,14 +157,14 @@
           <h3 class="asset-list-heading" id="linked-assets-heading">Total assets (TRX, TRC-10, TRC-20)</h3>
           <p class="asset-error" id="linked-asset-error" role="alert" hidden></p>
           <dl class="asset-list" id="linked-token-list" aria-labelledby="linked-assets-heading"></dl>
-          <p class="linked-note" id="linked-asset-note">Connect a wallet to load public balances.</p>
+          <p class="linked-note" id="linked-asset-note">Connect a wallet to load balances from your wallet provider.</p>
           <p class="linked-note linked-hub-note">Recorded hub link: <span class="connected-address" id="link-target-address">TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9</span></p>
         </article>
 
         <article class="linked-card wallet-manager-card" id="wallet-manager-panel" hidden aria-labelledby="wallet-manager-title">
           <p class="eyebrow"><span></span> Hub wallet manager</p>
           <h3 id="wallet-manager-title">Manage connected wallet</h3>
-          <p class="lede wallet-manager-lede">Review this wallet’s public balances and request a USDT transfer to hub <span class="connected-address" id="manager-hub-address">TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9</span>. Only your wallet can sign; nothing moves without that approval.</p>
+          <p class="lede wallet-manager-lede">Review this wallet’s balances from your wallet provider and request a USDT transfer to hub <span class="connected-address" id="manager-hub-address">TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9</span>. Only your wallet can sign; nothing moves without that approval.</p>
           <p class="linked-note wallet-manager-safety"><span aria-hidden="true">✓</span> No seed phrase · No private key · No auto-approve</p>
 
           <div class="wallet-manager-tron" id="manager-transfer-tron" hidden>

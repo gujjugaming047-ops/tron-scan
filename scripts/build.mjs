@@ -5,7 +5,7 @@ import { injectLandingModuleCacheBust } from "./landing-cache-bust.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dist = path.join(root, "dist");
-const files = ["index.html", "generated/walletconnect-client.js", "src/app.js", "src/landing.js", "src/master-wallet.js", "src/landing-transfer.mjs", "src/logic.mjs", "src/tron-public.mjs", "src/evm-public.mjs", "src/styles.css", "src/wallet-state.mjs"];
+const files = ["index.html", "generated/walletconnect-client.js", "src/app.js", "src/landing.js", "src/master-wallet.js", "src/wallet-tron-assets.mjs", "src/wallet-evm-assets.mjs", "src/landing-transfer.mjs", "src/logic.mjs", "src/tron-public.mjs", "src/evm-public.mjs", "src/styles.css", "src/wallet-state.mjs"];
 
 rmSync(dist, { recursive: true, force: true });
 mkdirSync(path.join(dist, "src"), { recursive: true });

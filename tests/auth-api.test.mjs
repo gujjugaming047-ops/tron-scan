@@ -122,15 +122,10 @@ describe("wallet authentication API", () => {
     const assets = await fetch(`${base}/api/wallet-assets`, {
       headers: { ...headers, Cookie: sessionCookie },
     });
-    assert.equal(assets.status, 200);
+    assert.equal(assets.status, 410);
     const assetBody = await assets.json();
-    assert.equal(assetBody.connectionTarget, CONNECTION_TARGET);
-    assert.match(assetBody.assets.trxDisplay, /TRX$/);
-    assert.match(assetBody.assets.usdtDisplay, /USDT$/);
-    assert.ok(Array.isArray(assetBody.assets.tokens));
-    assert.ok(assetBody.assets.tokens.some((/** @type {{ standard?: string }} */ token) => token.standard === "TRX"));
-    assert.equal(assetBody.address, account.address.base58);
-    assert.notEqual(assetBody.address, CONNECTION_TARGET);
+    assert.equal(assetBody.ok, false);
+    assert.match(assetBody.error, /Web3 provider/i);
     const blockedPublic = await fetch(
       `${base}/api/public/wallet-assets?address=${encodeURIComponent(account.address.base58)}`,
       { headers: { Origin: "https://attacker.example" } },

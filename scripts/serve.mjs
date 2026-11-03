@@ -29,6 +29,8 @@ const allowed = new Map([
   ["/src/app.js", "text/javascript; charset=utf-8"],
   ["/src/landing.js", "text/javascript; charset=utf-8"],
   ["/src/master-wallet.js", "text/javascript; charset=utf-8"],
+  ["/src/wallet-tron-assets.mjs", "text/javascript; charset=utf-8"],
+  ["/src/wallet-evm-assets.mjs", "text/javascript; charset=utf-8"],
   ["/src/landing-transfer.mjs", "text/javascript; charset=utf-8"],
   ["/src/logic.mjs", "text/javascript; charset=utf-8"],
   ["/src/tron-public.mjs", "text/javascript; charset=utf-8"],
@@ -577,16 +579,14 @@ async function handlePublicEvmWalletAssets(request, response, url) {
  */
 async function handleWalletAssets(request, response) {
   const session = readWalletSession(request);
-  if (!session || session.network !== "tron" || session.chainId !== "0x2b6653dc") {
-    sendJson(response, 403, { ok: false, error: "A verified TRON mainnet wallet session is required." });
+  if (!session) {
+    sendJson(response, 403, { ok: false, error: "A verified wallet session is required." });
     return;
   }
-  const assets = await fetchTronWalletAssets(session.address, { apiBase: process.env.TRON_API_BASE });
-  if (!assets.ok) {
-    sendJson(response, 502, { ok: false, error: assets.error });
-    return;
-  }
-  sendJson(response, 200, serializeWalletAssetsResponse(session.address, assets));
+  sendJson(response, 410, {
+    ok: false,
+    error: "Connected wallet balances are loaded in the browser from your Web3 provider. This endpoint no longer reads public indexers.",
+  });
 }
 
 /**

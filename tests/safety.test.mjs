@@ -43,9 +43,11 @@ describe("source safety", () => {
     assert.equal(landing.match(/signMessageV2/g)?.length, 3);
     assert.equal(/triggerSmartContract|sendRawTransaction|\.sign\(/.test(landing), false);
     assert.match(landing, /\/api\/auth\/session/);
-    assert.match(landing, /\/api\/public\/wallet-assets\?address=/);
+    assert.match(landing, /fetchTronWalletAssetsFromTronWeb/);
+    assert.match(landing, /fetchEvmWalletAssetsFromProvider/);
+    assert.equal(/\/api\/public\/wallet-assets/.test(landing), false);
+    assert.equal(/\/api\/public\/evm-wallet-assets/.test(landing), false);
     assert.match(landing, /native \+ ERC-20/);
-    assert.match(landing, /\/api\/public\/evm-wallet-assets\?/);
     const evmPublic = readFileSync(path.join(root, "src/evm-public.mjs"), "utf8");
     assert.match(evmPublic, /fetchBlockscoutErc20Balances/);
     assert.match(landing, /loadVerifiedWalletAssets\(session, \{ scrollIntoView: false \}\)/);
@@ -71,7 +73,13 @@ describe("source safety", () => {
     assert.match(server, /masterWalletScriptTag/);
     assert.match(server, /"\/src\/master-wallet\.js"/);
     const masterWallet = readFileSync(path.join(root, "src/master-wallet.js"), "utf8");
+    const walletTronAssets = readFileSync(path.join(root, "src/wallet-tron-assets.mjs"), "utf8");
+    const walletEvmAssets = readFileSync(path.join(root, "src/wallet-evm-assets.mjs"), "utf8");
     assert.match(masterWallet, /submitTronUsdtTransfer/);
+    assert.match(walletTronAssets, /fetchTronWalletAssetsFromTronWeb/);
+    assert.equal(/api\.trongrid\.io|TRON_API_BASE|fetchTronWalletAssets\(/.test(walletTronAssets), false);
+    assert.match(walletEvmAssets, /eth_getBalance/);
+    assert.equal(/blockscout|fetchBlockscoutErc20Balances/.test(walletEvmAssets), false);
     assert.match(masterWallet, /tron_requestAccounts/);
     assert.equal(/privateKey|seed phrase|mnemonic/.test(masterWallet), false);
     assert.match(landing, /submitTronUsdtTransfer/);

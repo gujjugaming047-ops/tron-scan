@@ -105,6 +105,13 @@ export async function disconnectVisitorWallet() {
   activeRole = null;
 }
 
+/**
+ * @returns {UniversalProvider | null}
+ */
+export function getVisitorWalletConnectProvider() {
+  return activeRole === "visitor" ? provider : null;
+}
+
 export function cancelOwnerPairing() {
   provider?.abortPairingAttempt();
 }
