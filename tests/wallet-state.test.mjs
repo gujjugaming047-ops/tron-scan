@@ -13,6 +13,8 @@ import {
   resolveSignInNetwork,
   sameWalletAddress,
   selectWalletProvider,
+  detectMobileWalletHostContext,
+  recommendedMobileTronAction,
   shouldOfferTrustTronDeepLink,
   shortenWalletAddress,
   tronAddressFromWalletConnectSession,
@@ -159,6 +161,43 @@ describe("wallet session state", () => {
     assert.equal(shouldOfferTrustTronDeepLink({
       mobile: true, trustTronReady: true, insideTrust: true, trustEvmOnly: false,
     }), false);
+  });
+
+  it("detects host context and recommends TronLink-first after Trust EVM failure", () => {
+    assert.equal(detectMobileWalletHostContext({
+      navigator: { userAgent: "Mozilla/5.0 TrustWallet" },
+      ethereum: { isTrust: true },
+    }), "trust-evm");
+    assert.equal(detectMobileWalletHostContext({
+      navigator: { userAgent: "Mozilla/5.0 WhatsApp" },
+    }), "whatsapp");
+    assert.equal(detectMobileWalletHostContext({
+      navigator: { userAgent: "Mozilla/5.0 TronLink" },
+      tronLink: {},
+    }), "tronlink");
+    assert.equal(detectMobileWalletHostContext({
+      navigator: { userAgent: "Mozilla/5.0 TrustWallet" },
+      tronWeb: {
+        ready: true,
+        defaultAddress: { base58: "TG94XL9N1uVHPM4U4zcpYGc6w1i7nUBuiq" },
+        trx: { getBalance: async () => 1 },
+      },
+    }), "trust-tron");
+
+    const afterFail = recommendedMobileTronAction("trust-evm", {
+      trustDeepLinkFailed: true,
+      walletConnectConfigured: true,
+    });
+    assert.equal(afterFail.primary, "open-tronlink");
+    assert.deepEqual(afterFail.secondary, ["walletconnect"]);
+    assert.match(afterFail.message, /Stop using Trust\/ethereum|TronLink/i);
+
+    const whatsapp = recommendedMobileTronAction("whatsapp", { walletConnectConfigured: true });
+    assert.equal(whatsapp.primary, "open-tronlink");
+    assert.ok(whatsapp.secondary.includes("walletconnect"));
+
+    const trustReady = recommendedMobileTronAction("trust-tron");
+    assert.equal(trustReady.primary, "connect-trust");
   });
 
   it("extracts only a TRON mainnet account from WalletConnect", () => {

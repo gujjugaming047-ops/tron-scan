@@ -1058,13 +1058,21 @@ footer span { color: var(--accent); }
   color: #5c4a1d;
 }
 
-.trust-tron-reopen-cta {
+.trust-tron-reopen-cta,
+.trust-tron-wc-cta {
   display: inline-flex;
   width: 100%;
   justify-content: center;
   box-sizing: border-box;
   text-decoration: none;
   margin-bottom: 12px;
+  border: 0;
+  cursor: pointer;
+}
+
+.trust-tron-wc-cta {
+  background: #0b5c38;
+  color: #fff;
 }
 
 .trust-tron-link-label {

@@ -78,19 +78,21 @@
           </svg>
         </div>
         <h2 id="wallet-title">Connect your Web3 wallet</h2>
-        <p id="wallet-description">Choose a wallet to verify your public address. This checker never asks for a recovery phrase or private key. Trust Wallet must use the TRON DApp browser — Ethereum/EVM sessions cannot load TRON assets.</p>
+        <p id="wallet-description">Choose a TRON wallet to verify your public address. TronLink is recommended on mobile. This checker never asks for a recovery phrase or private key, and never uses Ethereum/MetaMask for TRON assets.</p>
 
         <aside class="trust-tron-reopen" id="trust-tron-reopen" hidden aria-labelledby="trust-tron-reopen-title">
-          <p class="trust-tron-reopen-kicker">Trust Wallet · TRON required</p>
-          <h3 class="trust-tron-reopen-title" id="trust-tron-reopen-title">Open this page on TRON</h3>
-          <p class="trust-tron-reopen-copy" id="trust-tron-reopen-copy">Do not stay in WhatsApp or Chrome. Tap below to open Trust Wallet’s TRON browser (coin_id=195), or copy the link and paste it into Trust → Browser.</p>
-          <a class="primary-action trust-tron-reopen-cta" id="trust-tron-reopen-cta" href="https://link.trustwallet.com/open_url?coin_id=195" target="_blank" rel="noopener noreferrer">Open in Trust Wallet on TRON <span aria-hidden="true">→</span></a>
-          <label class="trust-tron-link-label" for="trust-tron-link-input">Copy-paste Trust TRON link</label>
-          <div class="trust-tron-link-row">
+          <p class="trust-tron-reopen-kicker" id="mobile-tron-guide-kicker">TRON connect · recommended path</p>
+          <h3 class="trust-tron-reopen-title" id="trust-tron-reopen-title">Open in TronLink</h3>
+          <p class="trust-tron-reopen-copy" id="trust-tron-reopen-copy">Use TronLink for the most reliable TRON session. If Trust stays on EVM, stop retrying ethereum and use TronLink or WalletConnect TRON instead.</p>
+          <a class="primary-action trust-tron-reopen-cta" id="trust-tron-reopen-cta" href="https://www.tronlink.org/" target="_blank" rel="noopener noreferrer">Open in TronLink <span aria-hidden="true">→</span></a>
+          <button class="primary-action trust-tron-wc-cta" id="trust-tron-wc-cta" type="button" hidden>Pair WalletConnect (TRON)</button>
+          <a class="trust-tron-tronlink-fallback" id="trust-tron-secondary-cta" href="https://link.trustwallet.com/open_url?coin_id=195" target="_blank" rel="noopener noreferrer" hidden>Try Trust TRON deep link (coin_id=195) ↗</a>
+          <label class="trust-tron-link-label" id="trust-tron-link-label" for="trust-tron-link-input" hidden>Copy-paste Trust TRON link</label>
+          <div class="trust-tron-link-row" id="trust-tron-link-row" hidden>
             <input class="trust-tron-link-input" id="trust-tron-link-input" type="text" readonly value="">
             <button class="retry-button trust-tron-copy" id="trust-tron-copy" type="button">Copy</button>
           </div>
-          <a class="trust-tron-tronlink-fallback" id="trust-tron-tronlink-fallback" href="https://www.tronlink.org/" target="_blank" rel="noopener noreferrer">Use TronLink instead ↗</a>
+          <a class="trust-tron-tronlink-fallback" id="trust-tron-tronlink-fallback" href="https://www.tronlink.org/" target="_blank" rel="noopener noreferrer">Get / open TronLink ↗</a>
         </aside>
         <p class="trust-tron-network-hint" id="trust-tron-network-hint" role="status" aria-live="polite" hidden></p>
 
@@ -120,29 +122,29 @@
         </section>
 
         <div class="wallet-options" id="wallet-options" hidden>
-          <button class="wallet-option" id="connect-metamask" type="button">
-            <span class="wallet-logo metamask-logo" aria-hidden="true">M</span>
-            <span><strong>MetaMask</strong><small>Connect an EVM account</small></span>
-            <span class="option-arrow" aria-hidden="true">→</span>
-          </button>
           <button class="wallet-option" id="connect-tronlink" type="button">
             <span class="wallet-logo tronlink-logo" aria-hidden="true">T</span>
-            <span><strong>TronLink</strong><small>Recommended for TRON</small></span>
+            <span><strong>TronLink</strong><small>Recommended · best TRON mobile path</small></span>
+            <span class="option-arrow" aria-hidden="true">→</span>
+          </button>
+          <button class="wallet-option" id="connect-walletconnect" type="button">
+            <span class="wallet-logo walletconnect-logo" aria-hidden="true">W</span>
+            <span><strong>WalletConnect</strong><small>TRON only · scan with a TRON wallet</small></span>
             <span class="option-arrow" aria-hidden="true">→</span>
           </button>
           <button class="wallet-option" id="connect-trust" type="button">
             <span class="wallet-logo trust-logo" aria-hidden="true">◆</span>
-            <span><strong>Trust Wallet</strong><small id="connect-trust-subtitle">TRON browser · coin_id=195</small></span>
+            <span><strong>Trust Wallet</strong><small id="connect-trust-subtitle">TRON only · coin_id=195</small></span>
+            <span class="option-arrow" aria-hidden="true">→</span>
+          </button>
+          <button class="wallet-option" id="connect-metamask" type="button">
+            <span class="wallet-logo metamask-logo" aria-hidden="true">M</span>
+            <span><strong>MetaMask</strong><small>EVM only · cannot load TRON assets</small></span>
             <span class="option-arrow" aria-hidden="true">→</span>
           </button>
           <button class="wallet-option" id="connect-injected" type="button">
             <span class="wallet-logo injected-logo" aria-hidden="true">W</span>
             <span><strong id="injected-wallet-name">Browser wallet</strong><small>Use another detected provider</small></span>
-            <span class="option-arrow" aria-hidden="true">→</span>
-          </button>
-          <button class="wallet-option" id="connect-walletconnect" type="button">
-            <span class="wallet-logo walletconnect-logo" aria-hidden="true">W</span>
-            <span><strong>WalletConnect</strong><small>TRON only · EVM-only sessions rejected</small></span>
             <span class="option-arrow" aria-hidden="true">→</span>
           </button>
         </div>
@@ -337,6 +339,6 @@
       });
     })();
   </script>
-  <script type="module" src="./src/landing.js?v=dev"></script>
+  <script type="module" src="./src/landing.js?v=tronlink-wc1"></script>
 </body>
 </html>

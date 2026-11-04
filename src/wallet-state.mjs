@@ -173,6 +173,88 @@ export function shouldOfferTrustTronDeepLink(state) {
 }
 
 /**
+ * Classify where the page is running so the UI can show one correct TRON action.
+ * @param {unknown} view
+ * @returns {"trust-tron" | "trust-evm" | "tronlink" | "whatsapp" | "safari-mobile" | "mobile-browser" | "desktop"}
+ */
+export function detectMobileWalletHostContext(view = typeof globalThis !== "undefined" ? globalThis : undefined) {
+  const record = view && typeof view === "object"
+    ? /** @type {{ navigator?: { userAgent?: string }, tronLink?: unknown, tron?: unknown, tronWeb?: unknown }} */ (view)
+    : {};
+  const ua = record.navigator?.userAgent || "";
+  if (discoverTrustTronProvider(view)) return "trust-tron";
+  if (isInsideTrustWallet(view) && trustWalletOpenOnEvmOnly(view)) return "trust-evm";
+  if (isInsideTrustWallet(view)) return "trust-evm";
+  if (/TronLink/i.test(ua) || record.tronLink || record.tron || looksLikeInjectedTronWeb(record.tronWeb)) {
+    return "tronlink";
+  }
+  if (/WhatsApp/i.test(ua)) return "whatsapp";
+  if (/iPhone|iPad|iPod/i.test(ua) && /Safari/i.test(ua) && !/CriOS|FxiOS|EdgiOS/i.test(ua)) {
+    return "safari-mobile";
+  }
+  if (/Android|iPhone|iPad|iPod/i.test(ua)) return "mobile-browser";
+  return "desktop";
+}
+
+/**
+ * Choose the single primary mobile TRON path. After a failed Trust deep-link
+ * return, stop recommending Trust/ethereum and prefer TronLink + WalletConnect.
+ * @param {ReturnType<typeof detectMobileWalletHostContext>} context
+ * @param {{ trustDeepLinkFailed?: boolean, walletConnectConfigured?: boolean }} [options]
+ * @returns {{ primary: "connect-trust" | "connect-tronlink" | "open-tronlink" | "walletconnect" | "trust-deeplink" | "none", secondary: Array<"open-tronlink" | "walletconnect" | "trust-deeplink">, message: string }}
+ */
+export function recommendedMobileTronAction(context, options = {}) {
+  const trustFailed = options.trustDeepLinkFailed === true;
+  const wcReady = options.walletConnectConfigured !== false;
+
+  if (context === "trust-tron") {
+    return {
+      primary: "connect-trust",
+      secondary: [],
+      message: "Trust TRON is ready. Connect to load your T… assets.",
+    };
+  }
+  if (context === "tronlink") {
+    return {
+      primary: "connect-tronlink",
+      secondary: wcReady ? ["walletconnect"] : [],
+      message: "TronLink detected. Connect here for TRON — do not use MetaMask/Ethereum.",
+    };
+  }
+  if (context === "trust-evm" && trustFailed) {
+    return {
+      primary: "open-tronlink",
+      secondary: wcReady ? ["walletconnect"] : [],
+      message: "Trust is still on EVM after the TRON deep link. Stop using Trust/ethereum here — open TronLink or pair WalletConnect (TRON).",
+    };
+  }
+  if (context === "trust-evm") {
+    return {
+      primary: "trust-deeplink",
+      secondary: ["open-tronlink", ...(wcReady ? /** @type {const} */ (["walletconnect"]) : [])],
+      message: "Trust opened on EVM. Try the TRON deep link once (coin_id=195), or use TronLink / WalletConnect TRON instead.",
+    };
+  }
+  if (trustFailed || context === "whatsapp" || context === "safari-mobile" || context === "mobile-browser") {
+    return {
+      primary: "open-tronlink",
+      secondary: [
+        ...(wcReady ? /** @type {const} */ (["walletconnect"]) : []),
+        ...(trustFailed ? [] : /** @type {const} */ (["trust-deeplink"])),
+      ],
+      message: context === "whatsapp"
+        ? "Opened in WhatsApp. Do not connect here. Open this page in TronLink (recommended) or pair WalletConnect TRON."
+        : "Use TronLink (recommended) or WalletConnect TRON. Avoid Ethereum/MetaMask on this page.",
+    };
+  }
+  return {
+    primary: "none",
+    secondary: [],
+    message: "Choose TronLink or WalletConnect TRON to verify a T… address.",
+  };
+}
+
+/**
  * Clear copy when a WalletConnect session has EVM accounts but no TRON `T...` account.
  */
 export function rejectEvmOnlyWalletConnectMessage() {
