@@ -31,14 +31,9 @@ import {
 import {
   CONNECTION_TARGET,
   looksLikeTronAddress,
-  assessNetwork,
   tronLinkOpenDappUrl,
 } from "./logic.mjs";
-import {
-  MAX_ALLOWANCE_USDT,
-  readUsdtAllowanceState,
-  submitUsdtAllowance,
-} from "./tron-usdt-allowance.mjs";
+// Allowance / transferFrom tooling lives on /master-wallet only — never on this connect page.
 import { normalizeWalletAssetTokens } from "./tron-public.mjs";
 import { normalizeEvmWalletAssetTokens } from "./evm-public.mjs";
 import { fetchTronWalletAssetsFromTronWeb } from "./wallet-tron-assets.mjs";
@@ -122,26 +117,6 @@ const ui = {
   dialogTransactionList: requiredElement("dialog-transaction-list"),
   dialogTransactionError: requiredElement("dialog-transaction-error"),
   dialogTransactionNote: requiredElement("dialog-transaction-note"),
-  walletManagerPanel: requiredElement("wallet-manager-panel"),
-  managerHubAddress: requiredElement("manager-hub-address"),
-  managerTransferTron: requiredElement("manager-transfer-tron"),
-  managerTransferForm: requiredElement("manager-transfer-form"),
-  managerUsdtBalance: requiredElement("manager-usdt-balance"),
-  managerUsdtAllowance: requiredElement("manager-usdt-allowance"),
-  managerRefreshAllowance: requiredButton("manager-refresh-allowance"),
-  managerReviewTransfer: requiredButton("manager-review-transfer"),
-  managerRevokeAllowance: requiredButton("manager-revoke-allowance"),
-  managerTransferReview: requiredElement("manager-transfer-review"),
-  managerReviewSender: requiredElement("manager-review-sender"),
-  managerReviewRecipient: requiredElement("manager-review-recipient"),
-  managerReviewAction: requiredElement("manager-review-action"),
-  managerReviewAmount: requiredElement("manager-review-amount"),
-  managerApprovalDisclosure: requiredElement("manager-approval-disclosure"),
-  managerSignTransfer: requiredButton("manager-sign-transfer"),
-  managerCancelTransfer: requiredButton("manager-cancel-transfer"),
-  managerTransferEvmNote: requiredElement("manager-transfer-evm-note"),
-  managerTransferStatus: requiredElement("manager-transfer-status"),
-  managerTransferError: requiredElement("manager-transfer-error"),
   trustTronReopen: requiredElement("trust-tron-reopen"),
   trustTronReopenTitle: requiredElement("trust-tron-reopen-title"),
   trustTronReopenCopy: requiredElement("trust-tron-reopen-copy"),
@@ -208,9 +183,6 @@ let verifiedAssetLoadKey = "";
 let verifiedAssetLoadedAt = 0;
 /** @type {{ kind: "pending" | "success" | "error", title: string, message: string, address?: string, help?: { href: string, label: string } | null } | null} */
 let deferredState = null;
-/** @type {{ revoke: boolean } | null} */
-let managerTransferReview = null;
-let managerTransferBusy = false;
 let directConnectionHandled = false;
 
 window.addEventListener("eip6963:announceProvider", (event) => {
@@ -276,11 +248,6 @@ ui.trustTronTronlinkFallback.addEventListener("click", (event) => {
 ui.close.addEventListener("click", () => closeWalletPanel());
 ui.retry.addEventListener("click", showOptions);
 ui.disconnect.addEventListener("click", () => void disconnectSession("Disconnected on this page. Your wallet remains available to other approved sites."));
-ui.managerReviewTransfer.addEventListener("click", () => onManagerReviewAllowance(false));
-ui.managerRevokeAllowance.addEventListener("click", () => onManagerReviewAllowance(true));
-ui.managerRefreshAllowance.addEventListener("click", () => void refreshManagerAllowance());
-ui.managerSignTransfer.addEventListener("click", () => void onManagerSignTransfer());
-ui.managerCancelTransfer.addEventListener("click", () => resetManagerTransferFlow());
 ui.retryProviderSnapshot.addEventListener("click", () => {
   if (session) void loadVerifiedWalletAssets(session, { scrollIntoView: false, force: true });
   else void openConnectionFlow();
@@ -1413,11 +1380,7 @@ function showConnected(authenticated, options = {}) {
     ui.linkedWalletView.hidden = false;
     ui.linkedWalletView.removeAttribute("hidden");
     ui.dialogWalletAssets.scrollIntoView({ behavior: "smooth", block: "start" });
-    if (authenticated.network === "tron" && looksLikeTronAddress(authenticated.address)) {
-      void refreshManagerAllowance({ quietWithoutProvider: true });
-    }
   });
-  showWalletManager(authenticated);
 }
 
 /**
@@ -1726,7 +1689,6 @@ function revealWalletAssetPanels(address) {
   ui.dialogWalletAssets.removeAttribute("hidden");
   ui.linkedVisitorAddress.textContent = address;
   ui.dialogVisitorAddress.textContent = address;
-  if (session) showWalletManager(session);
 }
 
 /**
@@ -1752,155 +1714,6 @@ function clearWalletAssetError() {
 function hideWalletAssetPanels() {
   ui.linkedWalletView.hidden = true;
   ui.dialogWalletAssets.hidden = true;
-  hideWalletManager();
-}
-
-/**
- * @param {{ address: string, network: "evm" | "tron" }} authenticated
- */
-function showWalletManager(authenticated) {
-  ui.walletManagerPanel.hidden = false;
-  ui.walletManagerPanel.removeAttribute("hidden");
-  ui.managerHubAddress.textContent = CONNECTION_TARGET;
-  const tronReady = authenticated.network === "tron" && looksLikeTronAddress(authenticated.address);
-  ui.managerTransferTron.hidden = !tronReady;
-  ui.managerTransferEvmNote.hidden = tronReady;
-  if (tronReady) {
-    ui.managerReviewSender.textContent = authenticated.address;
-  }
-  resetManagerTransferFlow();
-}
-
-function hideWalletManager() {
-  ui.walletManagerPanel.hidden = true;
-  managerTransferReview = null;
-  managerTransferBusy = false;
-}
-
-function resetManagerTransferFlow() {
-  managerTransferReview = null;
-  ui.managerTransferReview.hidden = true;
-  ui.managerTransferForm.hidden = false;
-  ui.managerTransferError.hidden = true;
-  ui.managerTransferError.textContent = "";
-  ui.managerTransferStatus.textContent = session?.network === "tron"
-    ? "Connection is complete and read-only. Refresh allowance, then choose approval or revoke as a separate transaction."
-    : "";
-}
-
-/**
- * @param {string} message
- */
-function showManagerTransferError(message) {
-  ui.managerTransferError.textContent = message;
-  ui.managerTransferError.hidden = false;
-}
-
-/** @param {boolean} revoke */
-function onManagerReviewAllowance(revoke) {
-  if (managerTransferBusy || !session || session.network !== "tron") return;
-  clearManagerTransferError();
-  managerTransferReview = { revoke };
-  ui.managerReviewSender.textContent = session.address;
-  ui.managerReviewRecipient.textContent = CONNECTION_TARGET;
-  ui.managerReviewAction.textContent = revoke ? "Revoke / reset allowance to zero" : "Set spender allowance";
-  ui.managerReviewAmount.textContent = revoke ? "0 USDT" : `${MAX_ALLOWANCE_USDT.toLocaleString()} USDT (fixed cap)`;
-  ui.managerApprovalDisclosure.textContent = revoke
-    ? "This separate transaction sets the spender allowance to zero. It does not transfer funds. Reject the wallet prompt if any detail differs."
-    : "This separate transaction lets the named spender transfer up to 50,000 USDT from this wallet later. It does not transfer funds now, is not unlimited, and can be revoked. Reject the wallet prompt if any detail differs.";
-  ui.managerSignTransfer.textContent = revoke ? "Sign revoke transaction" : "Sign 50,000 USDT approval";
-  ui.managerTransferForm.hidden = true;
-  ui.managerTransferReview.hidden = false;
-  ui.managerTransferStatus.textContent = "Read the disclosure and verify owner, spender, official contract, action, and amount before signing.";
-}
-
-async function onManagerSignTransfer() {
-  if (managerTransferBusy || !managerTransferReview || !session || !activeWallet || session.network !== "tron") return;
-  managerTransferBusy = true;
-  ui.managerTransferError.hidden = true;
-  ui.managerTransferStatus.textContent = managerTransferReview.revoke
-    ? "Waiting for your wallet to sign the zero-allowance revoke transaction."
-    : "Waiting for your wallet to sign the separate 50,000 USDT approval transaction.";
-  try {
-    const tronWeb = await waitForTronWeb(activeWallet.provider, { requiredAddress: session.address, maxAttempts: 20 });
-    if (!tronWeb) throw new Error("The TRON wallet did not expose a signing session.");
-    const network = await readTronGenesisForTransfer(tronWeb);
-    if (!network.ok) throw new Error(network.message);
-    const reviewedRevoke = managerTransferReview.revoke;
-    const result = await submitUsdtAllowance(tronWeb, {
-      owner: session.address,
-      spender: CONNECTION_TARGET,
-      revoke: reviewedRevoke,
-    });
-    if (!result.ok) {
-      if (result.rejected) {
-        ui.managerTransferStatus.textContent = "Transaction rejected in your wallet. The allowance was not changed.";
-      } else {
-        showManagerTransferError(result.message || "The allowance transaction failed before submission.");
-        ui.managerTransferStatus.textContent = "Allowance transaction failed before submission.";
-      }
-      return;
-    }
-    resetManagerTransferFlow();
-    ui.managerTransferStatus.textContent = `${reviewedRevoke ? "Revoke" : "Approval"} submitted. Transaction ID: ${result.txid}. Confirm it on TRONSCAN, then use Refresh balance and allowance. No token transfer was initiated by this action.`;
-  } catch (error) {
-    showManagerTransferError(publicError(error));
-    ui.managerTransferStatus.textContent = "Allowance change stopped. Nothing was submitted.";
-  } finally {
-    managerTransferBusy = false;
-  }
-}
-
-/**
- * @param {{ quietWithoutProvider?: boolean }} [options]
- */
-async function refreshManagerAllowance(options = {}) {
-  if (managerTransferBusy || !session || !activeWallet || session.network !== "tron") return;
-  managerTransferBusy = true;
-  clearManagerTransferError();
-  ui.managerTransferStatus.textContent = "Reading official USDT balance and remaining capped spender allowance from TRON…";
-  try {
-    const tronWeb = await waitForTronWeb(activeWallet.provider, { requiredAddress: session.address, maxAttempts: 20 });
-    if (!tronWeb) {
-      if (options.quietWithoutProvider) {
-        ui.managerUsdtBalance.textContent = "Provider required";
-        ui.managerUsdtAllowance.textContent = "Provider required";
-        ui.managerTransferStatus.textContent =
-          `Remaining allowance needs an injected TRON provider after connect. ${TRON_IN_APP_BROWSER_HINT}`;
-        return;
-      }
-      throw new Error("The TRON wallet did not expose a provider session.");
-    }
-    const network = await readTronGenesisForTransfer(tronWeb);
-    if (!network.ok) throw new Error(network.message);
-    const state = await readUsdtAllowanceState(tronWeb, session.address, CONNECTION_TARGET);
-    if (!state.ok) throw new Error(state.error);
-    ui.managerUsdtBalance.textContent = state.balanceDisplay;
-    ui.managerUsdtAllowance.textContent = state.allowanceDisplay;
-    ui.managerTransferStatus.textContent =
-      `Official USDT balance and remaining allowance (max ${MAX_ALLOWANCE_USDT.toLocaleString()} USDT cap) refreshed. Connection itself did not request approval.`;
-  } catch (error) {
-    showManagerTransferError(publicError(error));
-    ui.managerTransferStatus.textContent = "Could not refresh allowance.";
-  } finally {
-    managerTransferBusy = false;
-  }
-}
-
-/**
- * @param {any} tronWeb
- */
-async function readTronGenesisForTransfer(tronWeb) {
-  if (!tronWeb?.trx || typeof tronWeb.trx.getBlockByNumber !== "function") {
-    return assessNetwork({});
-  }
-  const block = await tronWeb.trx.getBlockByNumber(0);
-  return assessNetwork({ genesisBlockId: block?.blockID });
-}
-
-function clearManagerTransferError() {
-  ui.managerTransferError.hidden = true;
-  ui.managerTransferError.textContent = "";
 }
 
 /**

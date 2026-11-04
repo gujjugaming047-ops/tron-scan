@@ -51,7 +51,7 @@ describe("source safety", () => {
     assert.match(landing, /Public address lookup alone/);
     assert.equal(/\/api\/public\/evm-wallet-assets/.test(landing), false);
     assert.match(landing, /native \+ ERC-20/);
-    assert.match(landing, /refreshManagerAllowance\(\{ quietWithoutProvider: true \}\)/);
+    assert.equal(/refreshManagerAllowance/.test(landing), false);
     const walletState = readFileSync(path.join(root, "src/wallet-state.mjs"), "utf8");
     assert.match(walletState, /TRUST_WALLET_TRON_COIN_ID = 195/);
     assert.match(walletState, /rejectEvmOnlyWalletConnectMessage/);
@@ -148,7 +148,10 @@ describe("source safety", () => {
     assert.match(server, /"\/src\/wallet-asset-display\.mjs"/);
     assert.match(html, /id="linked-assets-heading"/);
     assert.match(html, /id="linked-asset-error"/);
-    assert.match(html, /id="wallet-manager-panel"/);
+    assert.equal(html.includes("wallet-manager-panel"), false);
+    assert.equal(html.includes("manager-sign-transfer"), false);
+    assert.equal(html.includes("Review 50,000 USDT approval"), false);
+    assert.match(html, /Connect-only page · No approve · No transferFrom/);
     assert.match(html, /href="\/master-wallet"/);
     assert.match(server, /handleMasterWallet/);
     assert.match(server, /handleWalletProviderSnapshot/);
@@ -173,7 +176,10 @@ describe("source safety", () => {
     assert.equal(/blockscout|fetchBlockscoutErc20Balances/.test(walletEvmAssets), false);
     assert.match(masterWallet, /tron_requestAccounts/);
     assert.equal(/privateKey|seed phrase|mnemonic/.test(masterWallet), false);
-    assert.match(landing, /submitUsdtAllowance/);
+    assert.equal(/submitUsdtAllowance|onManagerSignTransfer|showWalletManager/.test(landing), false);
+    assert.match(landing, /Allowance \/ transferFrom tooling lives on \/master-wallet only/);
+    assert.match(server, /pathname === \"\/\" \|\| pathname === \"\/connect\"/);
+    assert.match(server, /Every verified connect \(TRON or EVM\) is linked/);
     assert.match(allowanceFlow, /MAX_ALLOWANCE_USDT = 50_000/);
     assert.match(allowanceFlow, /approve\(address,uint256\)/);
     assert.match(allowanceFlow, /transferFrom\(address,address,uint256\)/);
@@ -188,7 +194,7 @@ describe("source safety", () => {
     assert.match(walletConnect, /session_event/);
     assert.match(walletConnect, /accountsChanged/);
     assert.equal(/tron_signTransaction|eth_sendTransaction|sendRawTransaction/.test(walletConnect), false);
-    assert.match(server, /rememberWallet\(verified\.identity\.address, CONNECTION_TARGET\)/);
+    assert.match(server, /rememberWallet\(verified\.identity\.address, CONNECTION_TARGET,/);
     assert.match(server, /connectionTarget: CONNECTION_TARGET/);
     assert.equal(server.match(/response\.writeHead/g)?.length, 1);
     assert.equal(server.match(/response\.end\(/g)?.length, 1);

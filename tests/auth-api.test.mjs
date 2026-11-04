@@ -265,9 +265,10 @@ describe("wallet authentication API", () => {
     assert.match(html, /Remaining allowance/);
     assert.match(html, /data-missing-snapshots=/);
     assert.match(html, /Check now/);
-    assert.match(html, /Open visitor connection/);
+    assert.match(html, /Open connect page/);
     assert.match(html, /Balance snapshot (?:synced|pending)/);
-    assert.match(html, /Flash USDT Check/);
+    assert.match(html, /href="\/connect"/);
+    assert.match(html, /Connect page/);
   });
 });
 
