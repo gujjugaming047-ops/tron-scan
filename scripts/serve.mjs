@@ -1065,7 +1065,9 @@ function masterWalletPage(wallets) {
       <div class="master-snapshot-refresh" data-state="${missingSnapshots ? "pending" : "synced"}">
         <p class="master-snapshot-sync-status" role="status" aria-live="polite">${missingSnapshots
           ? `${missingSnapshots} wallet${missingSnapshots === 1 ? "" : "s"} still need a balance snapshot. Open the visitor DApp inside that wallet and complete connection; this page checks again automatically.`
-          : "All current wallet cards have a published balance snapshot."}</p>
+          : wallets.length
+            ? "All current wallet cards have a published balance snapshot."
+            : "No connected wallets yet. Open the visitor connection inside a Web3 wallet, connect, and sign only the login message to publish balances."}</p>
         <button class="retry-button master-page-refresh" type="button">Check now</button>
         <a class="ghost" href="/?connect=1">Open visitor connection</a>
       </div>
