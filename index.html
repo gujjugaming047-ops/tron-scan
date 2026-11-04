@@ -78,16 +78,42 @@
           </svg>
         </div>
         <h2 id="wallet-title">Connect your Web3 wallet</h2>
-        <p id="wallet-description">Choose a TRON wallet to verify your public address. TronLink is recommended on mobile. This checker never asks for a recovery phrase or private key, and never uses Ethereum/MetaMask for TRON assets.</p>
+        <p id="wallet-description">Pick a network, then connect. TRON uses TronLink / WalletConnect TRON; EVM chains use MetaMask, Trust, or another injected wallet. Never enter a recovery phrase or private key.</p>
+
+        <div class="chain-selector" id="chain-selector" aria-labelledby="chain-selector-label">
+          <label class="chain-selector-label" id="chain-selector-label" for="chain-select">Network / chain</label>
+          <select class="chain-select" id="chain-select" aria-describedby="chain-selector-help">
+            <option value="tron" selected>TRON (TRX / TRC-20)</option>
+            <option value="ethereum">Ethereum</option>
+            <option value="bnb">BNB Smart Chain</option>
+            <option value="polygon">Polygon</option>
+            <option value="arbitrum">Arbitrum One</option>
+            <option value="optimism">Optimism</option>
+            <option value="base">Base</option>
+          </select>
+          <p class="chain-selector-help" id="chain-selector-help">Connect and asset load follow this selection. USDT allowance tools stay TRON-only (capped, never unlimited).</p>
+        </div>
+
+        <aside class="trust-open-panel" id="trust-open-panel" aria-labelledby="trust-open-title">
+          <p class="trust-tron-reopen-kicker" id="trust-open-kicker">Open in Trust Wallet</p>
+          <h3 class="trust-tron-reopen-title" id="trust-open-title">Trust DApp browser</h3>
+          <p class="trust-tron-reopen-copy" id="trust-open-copy">Opens this page inside Trust on the selected coin/network. TRON uses coin_id=195; EVM chains use that chain’s Trust coin id.</p>
+          <a class="primary-action trust-tron-reopen-cta" id="trust-open-cta" href="https://link.trustwallet.com/open_url?coin_id=195" target="_blank" rel="noopener noreferrer">Open in Trust Wallet <span aria-hidden="true">→</span></a>
+          <label class="trust-tron-link-label" id="trust-open-link-label" for="trust-open-link-input">Copy Trust open link</label>
+          <div class="trust-tron-link-row" id="trust-open-link-row">
+            <input class="trust-tron-link-input" id="trust-open-link-input" type="text" readonly value="">
+            <button class="retry-button trust-tron-copy" id="trust-open-copy-btn" type="button">Copy</button>
+          </div>
+        </aside>
 
         <aside class="trust-tron-reopen" id="trust-tron-reopen" hidden aria-labelledby="trust-tron-reopen-title">
-          <p class="trust-tron-reopen-kicker" id="mobile-tron-guide-kicker">Mobile · TronLink only</p>
+          <p class="trust-tron-reopen-kicker" id="mobile-tron-guide-kicker">Mobile · TronLink / WC</p>
           <h3 class="trust-tron-reopen-title" id="trust-tron-reopen-title">Open in TronLink</h3>
-          <p class="trust-tron-reopen-copy" id="trust-tron-reopen-copy">Primary path is TronLink. Secondary is WalletConnect TRON. Trust is not used as the default open path because it often lands on EVM.</p>
+          <p class="trust-tron-reopen-copy" id="trust-tron-reopen-copy">On TRON, TronLink is the reliable mobile path. WalletConnect TRON is secondary. Use the Trust open link above when you specifically want Trust’s TRON browser (coin_id=195).</p>
           <a class="primary-action trust-tron-reopen-cta" id="trust-tron-reopen-cta" href="https://www.tronlink.org/" target="_blank" rel="noopener noreferrer">Open in TronLink <span aria-hidden="true">→</span></a>
           <button class="primary-action trust-tron-wc-cta" id="trust-tron-wc-cta" type="button">Pair WalletConnect (TRON)</button>
           <a class="trust-tron-tronlink-fallback" id="trust-tron-secondary-cta" href="https://www.tronlink.org/" target="_blank" rel="noopener noreferrer" hidden>Get TronLink ↗</a>
-          <label class="trust-tron-link-label" id="trust-tron-link-label" for="trust-tron-link-input" hidden>Advanced Trust TRON link (not recommended)</label>
+          <label class="trust-tron-link-label" id="trust-tron-link-label" for="trust-tron-link-input" hidden>Legacy Trust TRON link</label>
           <div class="trust-tron-link-row" id="trust-tron-link-row" hidden>
             <input class="trust-tron-link-input" id="trust-tron-link-input" type="text" readonly value="">
             <button class="retry-button trust-tron-copy" id="trust-tron-copy" type="button">Copy</button>
@@ -122,24 +148,24 @@
         </section>
 
         <div class="wallet-options" id="wallet-options" hidden>
-          <button class="wallet-option" id="connect-tronlink" type="button">
+          <button class="wallet-option" id="connect-tronlink" type="button" data-networks="tron">
             <span class="wallet-logo tronlink-logo" aria-hidden="true">T</span>
-            <span><strong>TronLink</strong><small>Recommended · best TRON mobile path</small></span>
+            <span><strong>TronLink</strong><small>Recommended on TRON</small></span>
             <span class="option-arrow" aria-hidden="true">→</span>
           </button>
-          <button class="wallet-option" id="connect-walletconnect" type="button">
+          <button class="wallet-option" id="connect-walletconnect" type="button" data-networks="tron">
             <span class="wallet-logo walletconnect-logo" aria-hidden="true">W</span>
             <span><strong>WalletConnect</strong><small>TRON only · scan with a TRON wallet</small></span>
             <span class="option-arrow" aria-hidden="true">→</span>
           </button>
-          <button class="wallet-option wallet-option-demoted" id="connect-trust" type="button" hidden>
+          <button class="wallet-option" id="connect-trust" type="button" data-networks="tron,evm">
             <span class="wallet-logo trust-logo" aria-hidden="true">◆</span>
-            <span><strong>Trust Wallet</strong><small id="connect-trust-subtitle">Demoted · often opens EVM · use TronLink</small></span>
+            <span><strong>Trust Wallet</strong><small id="connect-trust-subtitle">Uses selected chain · open via Trust link above</small></span>
             <span class="option-arrow" aria-hidden="true">→</span>
           </button>
-          <button class="wallet-option" id="connect-metamask" type="button">
+          <button class="wallet-option" id="connect-metamask" type="button" data-networks="evm">
             <span class="wallet-logo metamask-logo" aria-hidden="true">M</span>
-            <span><strong>MetaMask</strong><small>EVM only · cannot load TRON assets</small></span>
+            <span><strong>MetaMask</strong><small>EVM · switches to selected chain</small></span>
             <span class="option-arrow" aria-hidden="true">→</span>
           </button>
           <button class="wallet-option" id="connect-injected" type="button">
@@ -223,6 +249,7 @@
           </div>
 
           <p class="linked-note wallet-manager-evm" id="manager-transfer-evm-note" hidden>
+            EVM sessions are read-only here for balances. This page never requests unlimited token approvals on EVM. USDT allowance / transferFrom tools are TRON-mainnet only and stay capped.
             Allowance management is available only for a connected TRON-mainnet owner wallet with a signing provider.
           </p>
 

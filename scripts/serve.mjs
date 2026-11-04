@@ -45,6 +45,7 @@ const allowed = new Map([
   ["/src/evm-public.mjs", "text/javascript; charset=utf-8"],
   ["/src/styles.css", "text/css; charset=utf-8"],
   ["/src/wallet-state.mjs", "text/javascript; charset=utf-8"],
+  ["/src/chain-catalog.mjs", "text/javascript; charset=utf-8"],
 ]);
 
 const server = createServer(async (request, response) => {
