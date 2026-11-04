@@ -1,6 +1,10 @@
 import UniversalProvider from "@walletconnect/universal-provider";
 import { toDataURL } from "qrcode";
-import { tronAddressFromWalletConnectSession } from "./wallet-state.mjs";
+import {
+  rejectEvmOnlyWalletConnectMessage,
+  tronAddressFromWalletConnectSession,
+  walletConnectSessionIsEvmOnly,
+} from "./wallet-state.mjs";
 
 const TRON_CHAIN = "tron:0x2b6653dc";
 /** @type {UniversalProvider | null} */
@@ -38,10 +42,19 @@ export async function pairVisitorWallet(options) {
   }
   activeRole = "visitor";
   const existing = client.session;
-  const session = existing || await client.connect({
-    namespaces: tronNamespace(),
-  });
-  return pairingResult(session, Boolean(existing));
+  try {
+    const session = existing || await client.connect({
+      namespaces: tronNamespace(),
+    });
+    return pairingResult(session, Boolean(existing));
+  } catch (error) {
+    if (client.session && walletConnectSessionIsEvmOnly(client.session, TRON_CHAIN)) {
+      suppressNextDelete = true;
+      await client.disconnect().catch(() => {});
+      activeRole = null;
+    }
+    throw error instanceof Error ? error : new Error(rejectEvmOnlyWalletConnectMessage());
+  }
 }
 
 /**
@@ -201,7 +214,12 @@ function dispatchVisitorSelectionChanged() {
 function pairingResult(session, restored) {
   if (!session) throw new Error("The wallet did not approve the WalletConnect session.");
   const address = tronAddressFromWalletConnectSession(session, TRON_CHAIN);
-  if (!address) throw new Error("The paired wallet did not return a TRON mainnet account.");
+  if (!address) {
+    const message = walletConnectSessionIsEvmOnly(session, TRON_CHAIN)
+      ? rejectEvmOnlyWalletConnectMessage()
+      : "The paired wallet did not return a TRON mainnet account (T…). Use TronLink or Trust Wallet’s TRON in-app browser, or pair a wallet that exposes TRON mainnet.";
+    throw new Error(message);
+  }
   return { address, restored, chainId: TRON_CHAIN };
 }
 

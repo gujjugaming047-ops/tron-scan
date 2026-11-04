@@ -2,8 +2,9 @@
  * TRON balances read through the connected wallet's TronWeb / node — never TronGrid.
  */
 
-import { USDT_CONTRACT, USDT_DECIMALS, isValidTronAddress } from "./logic.mjs";
+import { USDT_CONTRACT, isValidTronAddress } from "./logic.mjs";
 import {
+  KNOWN_TRC20_TOKENS,
   buildWalletTokenList,
   extractTrc10BalancesFromAccountRow,
   extractTrc20BalancesFromAccountRow,
@@ -11,9 +12,11 @@ import {
   extractTrc20UintFromTriggerPayload,
   extractUsdtUnitsFromTriggerPayload,
   formatTrxFromSun,
+  lookupKnownTrc20Metadata,
   parseUInt256,
   pickUsdtFromTokenList,
 } from "./tron-public.mjs";
+import { isTronRateLimitError, tronReadErrorMessage, withTronReadBackoff } from "./tron-read-retry.mjs";
 
 const MAX_TRC20_METADATA_LOOKUPS = 120;
 
@@ -27,13 +30,13 @@ const MAX_TRC20_METADATA_LOOKUPS = 120;
 async function triggerConstantViaTronWeb(tronWeb, ownerAddress, contract, selector, parameters = []) {
   if (!tronWeb?.transactionBuilder?.triggerConstantContract) return null;
   try {
-    return await tronWeb.transactionBuilder.triggerConstantContract(
+    return await withTronReadBackoff(() => tronWeb.transactionBuilder.triggerConstantContract(
       contract,
       selector,
       {},
       parameters,
       ownerAddress,
-    );
+    ));
   } catch {
     return null;
   }
@@ -55,10 +58,7 @@ async function readTrc20BalanceViaTronWeb(tronWeb, ownerAddress, contract) {
  * @param {string} contract
  */
 function knownTrc20Metadata(contract) {
-  if (contract === USDT_CONTRACT) {
-    return { symbol: "USDT", name: "Tether USD", decimals: USDT_DECIMALS };
-  }
-  return null;
+  return lookupKnownTrc20Metadata(contract);
 }
 
 /**
@@ -108,7 +108,7 @@ async function loadTrc10MetadataViaTronWeb(tronWeb, tokenId) {
   let decimals = 0;
   if (tronWeb?.trx?.getTokenFromID) {
     try {
-      const token = await tronWeb.trx.getTokenFromID(tokenId);
+      const token = await withTronReadBackoff(() => tronWeb.trx.getTokenFromID(tokenId));
       if (token && typeof token === "object") {
         const record = /** @type {{ abbr?: unknown, name?: unknown, precision?: unknown }} */ (token);
         if (typeof record.abbr === "string" && record.abbr.trim()) symbol = record.abbr.trim();
@@ -138,19 +138,26 @@ function normalizeTronAccountRow(account) {
  * @param {Array<{ contract: string, units: bigint }>} balances
  * @param {string} contract
  * @param {bigint} units
+ * @param {{ keepZero?: boolean }} [options]
  */
-function upsertTrc20Balance(balances, contract, units) {
-  if (units <= 0n) {
+function upsertTrc20Balance(balances, contract, units, options = {}) {
+  const keepZero = options.keepZero === true || contract === USDT_CONTRACT;
+  if (units <= 0n && !keepZero) {
     const index = balances.findIndex((entry) => entry.contract === contract);
     if (index >= 0) balances.splice(index, 1);
     return;
   }
+  const normalized = units < 0n ? 0n : units;
   const existing = balances.find((entry) => entry.contract === contract);
   if (existing) {
-    existing.units = units;
+    existing.units = normalized;
     return;
   }
-  balances.push({ contract, units });
+  if (contract === USDT_CONTRACT) {
+    balances.unshift({ contract, units: normalized });
+    return;
+  }
+  balances.push({ contract, units: normalized });
 }
 
 /**
@@ -168,30 +175,47 @@ export async function fetchTronWalletAssetsFromTronWeb(tronWeb, address) {
   }
 
   let accountRow = null;
+  let accountError = null;
   try {
-    const account = await tronWeb.trx.getAccount(trimmed);
+    const account = await withTronReadBackoff(() => tronWeb.trx.getAccount(trimmed));
     accountRow = normalizeTronAccountRow(account);
-  } catch {
+  } catch (error) {
+    accountError = error;
     accountRow = null;
   }
 
   let trxSun = 0n;
+  let balanceError = null;
   try {
-    const balance = await tronWeb.trx.getBalance(trimmed);
+    const balance = await withTronReadBackoff(() => tronWeb.trx.getBalance(trimmed));
     trxSun = parseUInt256(balance);
-  } catch {
+  } catch (error) {
+    balanceError = error;
     if (accountRow) trxSun = parseUInt256(accountRow.balance);
+  }
+  if (!accountRow && balanceError && (isTronRateLimitError(accountError) || isTronRateLimitError(balanceError))) {
+    return { ok: false, error: tronReadErrorMessage(balanceError || accountError) };
   }
 
   /** @type {Array<{ contract: string, units: bigint }>} */
   const trc20Balances = accountRow ? extractTrc20BalancesFromAccountRow(accountRow) : [];
   const trc10Balances = accountRow ? extractTrc10BalancesFromAccountRow(accountRow) : [];
 
-  try {
-    const usdtUnits = await readTrc20BalanceViaTronWeb(tronWeb, trimmed, USDT_CONTRACT);
-    upsertTrc20Balance(trc20Balances, USDT_CONTRACT, usdtUnits);
-  } catch {
-    // ignore single-token probe failures
+  for (const known of KNOWN_TRC20_TOKENS) {
+    try {
+      const units = await readTrc20BalanceViaTronWeb(tronWeb, trimmed, known.contract);
+      // Always surface official USDT (even at zero); other known tokens only when held.
+      if (known.contract === USDT_CONTRACT || units > 0n) {
+        upsertTrc20Balance(trc20Balances, known.contract, units);
+      }
+    } catch {
+      if (known.contract === USDT_CONTRACT) {
+        upsertTrc20Balance(trc20Balances, USDT_CONTRACT, 0n, { keepZero: true });
+      }
+    }
+  }
+  if (!trc20Balances.some((entry) => entry.contract === USDT_CONTRACT)) {
+    upsertTrc20Balance(trc20Balances, USDT_CONTRACT, 0n, { keepZero: true });
   }
 
   /** @type {Map<string, { symbol: string, name: string, decimals: number }>} */
@@ -199,14 +223,14 @@ export async function fetchTronWalletAssetsFromTronWeb(tronWeb, address) {
   /** @type {Map<string, { symbol: string, name: string, decimals: number }>} */
   const trc10Meta = new Map();
 
-  await Promise.all(trc10Balances.map(async ({ tokenId }) => {
+  for (const { tokenId } of trc10Balances) {
     trc10Meta.set(tokenId, await loadTrc10MetadataViaTronWeb(tronWeb, tokenId));
-  }));
+  }
 
   const trc20Lookups = trc20Balances.slice(0, MAX_TRC20_METADATA_LOOKUPS);
-  await Promise.all(trc20Lookups.map(async ({ contract }) => {
+  for (const { contract } of trc20Lookups) {
     trc20Meta.set(contract, await loadTrc20MetadataViaTronWeb(tronWeb, trimmed, contract));
-  }));
+  }
   for (const { contract } of trc20Balances.slice(MAX_TRC20_METADATA_LOOKUPS)) {
     trc20Meta.set(contract, knownTrc20Metadata(contract) ?? {
       symbol: shortenContractLabel(contract),
