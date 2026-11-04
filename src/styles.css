@@ -1028,6 +1028,17 @@ footer span { color: var(--accent); }
   text-underline-offset: 3px;
 }
 
+.trust-tron-network-hint {
+  margin: 0 24px 12px;
+  padding: 10px 12px;
+  border: 1px solid #d7c48a;
+  background: #fff8e8;
+  color: #5c4a1d;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  border-radius: 10px;
+}
+
 .dialog-safety {
   margin: 0;
   padding: 15px 24px 20px;

@@ -31,7 +31,9 @@ export function selectWalletProvider(providers, id, preferredNetwork = null) {
   const matches = providers.filter((provider) => provider.id === id);
   if (!matches.length) return null;
   if (preferredNetwork) {
-    return matches.find((provider) => provider.network === preferredNetwork) || matches[0];
+    // Never fall back to EVM when TRON was requested — Trust mobile often
+    // injects ethereum first while the DApp browser is still on Ethereum.
+    return matches.find((provider) => provider.network === preferredNetwork) || null;
   }
   return matches[0];
 }
@@ -84,10 +86,161 @@ export const TRON_IN_APP_BROWSER_HINT =
   "Open this page in TronLink or Trust Wallet’s TRON in-app browser, approve the connection, then return here.";
 
 /**
+ * Trust Wallet mobile often opens the DApp browser on Ethereum. Tell the user
+ * to switch the active coin/network to TRON before connecting.
+ */
+export function trustWalletSwitchToTronMessage() {
+  return "Trust Wallet is on an EVM network right now, so TRON assets cannot load. In Trust Wallet: open your TRON (TRX) wallet, switch the DApp browser network/coin to TRON, then reload this page and tap Trust Wallet again. Use a TRON deep link with coin_id=195 (not Ethereum 60).";
+}
+
+/**
  * Clear copy when a WalletConnect session has EVM accounts but no TRON `T...` account.
  */
 export function rejectEvmOnlyWalletConnectMessage() {
   return `This WalletConnect session is EVM-only and cannot read TRON assets. Disconnect it, then ${TRON_IN_APP_BROWSER_HINT}`;
+}
+
+/**
+ * @param {unknown} view
+ */
+export function isInsideTrustWallet(view = typeof globalThis !== "undefined" ? globalThis : undefined) {
+  if (!view || typeof view !== "object") return false;
+  const record = /** @type {{ trustwallet?: unknown, ethereum?: { isTrust?: boolean }, navigator?: { userAgent?: string } }} */ (view);
+  if (record.trustwallet) return true;
+  if (record.ethereum?.isTrust) return true;
+  const ua = record.navigator?.userAgent || "";
+  return /Trust/i.test(ua);
+}
+
+/**
+ * @param {unknown} value
+ */
+export function looksLikeInjectedTronWeb(value) {
+  if (!value || typeof value !== "object") return false;
+  const tronWeb = /** @type {{ trx?: { getBalance?: unknown, getBlockByNumber?: unknown }, defaultAddress?: { base58?: unknown } }} */ (value);
+  return typeof tronWeb.trx?.getBalance === "function"
+    || typeof tronWeb.trx?.getBlockByNumber === "function"
+    || typeof tronWeb.defaultAddress?.base58 === "string";
+}
+
+/**
+ * @param {unknown} view
+ * @returns {object | null}
+ */
+export function readGlobalTronWeb(view = typeof globalThis !== "undefined" ? globalThis : undefined) {
+  if (!view || typeof view !== "object") return null;
+  const record = /** @type {{
+   * tronWeb?: unknown,
+   * tron?: { tronWeb?: unknown },
+   * tronLink?: { tronWeb?: unknown },
+   * trustwallet?: { tronLink?: { tronWeb?: unknown }, tronWeb?: unknown }
+   * }} */ (view);
+  const candidates = [
+    record.trustwallet?.tronLink?.tronWeb,
+    record.trustwallet?.tronWeb,
+    record.tronWeb,
+    record.tronLink?.tronWeb,
+    record.tron?.tronWeb,
+  ];
+  for (const candidate of candidates) {
+    if (looksLikeInjectedTronWeb(candidate)) return /** @type {object} */ (candidate);
+  }
+  return null;
+}
+
+/**
+ * Wrap a bare Trust/TronLink `tronWeb` object as a requestable TRON provider.
+ * Trust mobile often injects `window.tronWeb` without `tronLink.request`.
+ * @param {object} tronWeb
+ * @param {{ isTrust?: boolean }} [options]
+ */
+export function wrapTronWebAsProvider(tronWeb, options = {}) {
+  return {
+    tronWeb,
+    isTrust: options.isTrust === true,
+    /**
+     * @param {{ method: string, params?: unknown[] }} args
+     */
+    async request(args) {
+      const method = args?.method || "";
+      const address = /** @type {{ defaultAddress?: { base58?: unknown } }} */ (tronWeb).defaultAddress?.base58;
+      if (method === "tron_requestAccounts" || method === "eth_requestAccounts") {
+        if (typeof address === "string" && /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(address)) {
+          return { code: 200, address };
+        }
+        throw new Error(trustWalletSwitchToTronMessage());
+      }
+      throw new Error(`Unsupported Trust TRON method: ${method || "(missing)"}`);
+    },
+  };
+}
+
+/**
+ * Discover Trust Wallet’s TRON injection across the shapes Trust uses on mobile.
+ * Prefer tronWeb / trustwallet.tronLink over the EVM ethereum provider.
+ * @param {unknown} view
+ * @returns {ReturnType<typeof wrapTronWebAsProvider> | { request: Function, tronWeb?: unknown, isTrust?: boolean } | null}
+ */
+export function discoverTrustTronProvider(view = typeof globalThis !== "undefined" ? globalThis : undefined) {
+  if (!view || typeof view !== "object") return null;
+  const record = /** @type {{
+   * trustwallet?: { tronLink?: { request?: Function, tronWeb?: unknown }, tronWeb?: unknown, ethereum?: unknown },
+   * tronLink?: { request?: Function, tronWeb?: unknown, isTrust?: boolean },
+   * tron?: { request?: Function, tronWeb?: unknown },
+   * tronWeb?: unknown,
+   * ethereum?: { isTrust?: boolean },
+   * navigator?: { userAgent?: string }
+   * }} */ (view);
+  const insideTrust = isInsideTrustWallet(view);
+
+  const trustTronLink = record.trustwallet?.tronLink;
+  if (trustTronLink && typeof trustTronLink.request === "function") {
+    return /** @type {{ request: Function, tronWeb?: unknown, isTrust?: boolean }} */ (trustTronLink);
+  }
+
+  const nestedTronWeb = readGlobalTronWeb(view);
+  if (nestedTronWeb && (insideTrust || trustTronLink || record.trustwallet?.tronWeb)) {
+    return wrapTronWebAsProvider(nestedTronWeb, { isTrust: true });
+  }
+
+  // Inside Trust, a top-level tronLink/tron injection is still Trust’s TRON provider.
+  if (insideTrust) {
+    for (const candidate of [record.tronLink, record.tron]) {
+      if (candidate && typeof candidate.request === "function") {
+        const nested = /** @type {{ tronWeb?: unknown }} */ (candidate).tronWeb;
+        if (looksLikeInjectedTronWeb(nested)) {
+          return wrapTronWebAsProvider(/** @type {object} */ (nested), { isTrust: true });
+        }
+        return /** @type {{ request: Function, tronWeb?: unknown, isTrust?: boolean }} */ (candidate);
+      }
+      const nested = candidate && typeof candidate === "object"
+        ? /** @type {{ tronWeb?: unknown }} */ (candidate).tronWeb
+        : null;
+      if (looksLikeInjectedTronWeb(nested)) {
+        return wrapTronWebAsProvider(/** @type {object} */ (nested), { isTrust: true });
+      }
+    }
+    if (looksLikeInjectedTronWeb(record.tronWeb)) {
+      return wrapTronWebAsProvider(/** @type {object} */ (record.tronWeb), { isTrust: true });
+    }
+  }
+
+  return null;
+}
+
+/**
+ * True when Trust’s EVM provider is present but no TRON injection is ready yet.
+ * @param {unknown} view
+ */
+export function trustWalletOpenOnEvmOnly(view = typeof globalThis !== "undefined" ? globalThis : undefined) {
+  if (!isInsideTrustWallet(view)) return false;
+  if (discoverTrustTronProvider(view)) return false;
+  const record = /** @type {{ trustwallet?: { ethereum?: { request?: Function } }, ethereum?: { isTrust?: boolean, request?: Function } }} */ (view);
+  return Boolean(
+    (record.trustwallet?.ethereum && typeof record.trustwallet.ethereum.request === "function")
+    || (record.ethereum?.isTrust && typeof record.ethereum.request === "function")
+    || record.ethereum,
+  );
 }
 
 /**
@@ -150,13 +303,13 @@ export function requireGenuineTronSessionAddress(address, network) {
   if (network !== "tron") {
     return {
       ok: false,
-      error: `A TRON mainnet wallet session is required. ${TRON_IN_APP_BROWSER_HINT}`,
+      error: `A TRON mainnet wallet session is required. ${trustWalletSwitchToTronMessage()}`,
     };
   }
   if (!/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(trimmed)) {
     return {
       ok: false,
-      error: `The connected wallet did not return a TRON address (T…). ${TRON_IN_APP_BROWSER_HINT}`,
+      error: `The connected wallet did not return a TRON address (T…). ${trustWalletSwitchToTronMessage()}`,
     };
   }
   return { ok: true, address: trimmed };

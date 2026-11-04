@@ -1,14 +1,18 @@
 import {
   TRON_IN_APP_BROWSER_HINT,
+  discoverTrustTronProvider,
   evaluateSessionRestore,
   firstEvmAddress,
   identifyEvmProvider,
+  isInsideTrustWallet,
   requireGenuineTronSessionAddress,
   resolveSignInNetwork,
   sameWalletAddress,
   selectWalletProvider,
   readTronWebFromProvider,
   shortenWalletAddress,
+  trustWalletOpenOnEvmOnly,
+  trustWalletSwitchToTronMessage,
   waitForTronWeb,
   walletHelpLink,
 } from "./wallet-state.mjs";
@@ -234,10 +238,11 @@ window.setTimeout(() => {
 
 function discoverProviders() {
   const view = /** @type {Window & {
-   * ethereum?: WalletProvider & { providers?: WalletProvider[] },
-   * trustwallet?: { ethereum?: WalletProvider, tronLink?: WalletProvider },
+   * ethereum?: WalletProvider & { providers?: WalletProvider[], isTrust?: boolean },
+   * trustwallet?: { ethereum?: WalletProvider, tronLink?: WalletProvider, tronWeb?: unknown },
    * tronLink?: WalletProvider,
-   * tron?: WalletProvider
+   * tron?: WalletProvider,
+   * tronWeb?: unknown
    * }} */ (window);
   const ethereumCandidates = [
     view.trustwallet?.ethereum,
@@ -247,14 +252,24 @@ function discoverProviders() {
   for (const candidate of ethereumCandidates) {
     if (candidate && typeof candidate.request === "function") addProvider(describeEvmProvider(candidate));
   }
-  const trustTron = view.trustwallet?.tronLink;
+  // Prefer Trust’s TRON injection (tronWeb / trustwallet.tronLink) over EVM.
+  const trustTron = discoverTrustTronProvider(view);
   if (trustTron && typeof trustTron.request === "function") {
-    addProvider({ id: "trust", network: "tron", name: "Trust Wallet", provider: trustTron });
+    addProvider({
+      id: "trust",
+      network: "tron",
+      name: "Trust Wallet",
+      provider: /** @type {WalletProvider} */ (trustTron),
+    });
   }
-  const tronLink = view.tronLink || view.tron;
-  if (tronLink && typeof tronLink.request === "function") {
-    addProvider({ id: "tronlink", network: "tron", name: "TronLink", provider: tronLink });
+  // Avoid classifying Trust’s TRON injection as TronLink when running inside Trust.
+  if (!isInsideTrustWallet(view)) {
+    const tronLink = view.tronLink || view.tron;
+    if (tronLink && typeof tronLink.request === "function") {
+      addProvider({ id: "tronlink", network: "tron", name: "TronLink", provider: tronLink });
+    }
   }
+  updateTrustNetworkHint();
 }
 
 /**
@@ -289,6 +304,7 @@ function renderProviderOptions() {
   const injected = selectProvider("injected");
   ui.injected.hidden = !injected;
   if (injected) ui.injectedName.textContent = injected.name;
+  updateTrustNetworkHint();
 }
 
 /**
@@ -296,10 +312,50 @@ function renderProviderOptions() {
  */
 function selectProvider(id) {
   // Flash USDT assets require a genuine TRON provider for Trust and TronLink.
+  // Do not fall back to Trust’s EVM ethereum provider.
   if (id === "trust" || id === "tronlink") {
     return selectWalletProvider(providers, id, "tron");
   }
   return selectWalletProvider(providers, id, null);
+}
+
+function updateTrustNetworkHint() {
+  const hint = document.getElementById("trust-tron-network-hint");
+  if (!hint) return;
+  const trustTronReady = Boolean(selectProvider("trust"));
+  const evmOnly = trustWalletOpenOnEvmOnly(window);
+  if (evmOnly && !trustTronReady) {
+    hint.hidden = false;
+    hint.removeAttribute("hidden");
+    hint.textContent = trustWalletSwitchToTronMessage();
+    return;
+  }
+  if (isInsideTrustWallet(window) && trustTronReady) {
+    hint.hidden = false;
+    hint.removeAttribute("hidden");
+    hint.textContent = "Trust Wallet TRON provider detected. Connect to load TRX, USDT, and remaining allowance.";
+    return;
+  }
+  hint.hidden = true;
+  hint.setAttribute("hidden", "");
+  hint.textContent = "";
+}
+
+/**
+ * Trust injects tronWeb after the DApp browser finishes switching to TRON.
+ * Wait briefly before declaring TRON unavailable.
+ * @param {number} [maxAttempts]
+ */
+async function waitForTrustTronProvider(maxAttempts = 15) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    discoverProviders();
+    const wallet = selectProvider("trust");
+    if (wallet) return wallet;
+    if (!isInsideTrustWallet(window)) break;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  discoverProviders();
+  return selectProvider("trust");
 }
 
 async function initializeSessions() {
@@ -603,12 +659,21 @@ async function restoreSession() {
 async function connectSelected(walletId) {
   if (busy) return;
   discoverProviders();
-  const wallet = selectProvider(walletId);
+  let wallet = selectProvider(walletId);
+  if (walletId === "trust" && !wallet) {
+    showState({
+      kind: "pending",
+      title: "Looking for Trust TRON…",
+      message: "Waiting for Trust Wallet to inject tronWeb. If the DApp browser is still on Ethereum, switch to TRON (TRX) first.",
+    });
+    wallet = await waitForTrustTronProvider();
+  }
   if (!wallet) {
     const displayName = walletId === "metamask" ? "MetaMask" : walletId === "tronlink" ? "TronLink" : walletId === "trust" ? "Trust Wallet" : "Browser wallet";
+    const onEvm = walletId === "trust" && trustWalletOpenOnEvmOnly(window);
     showState({
       kind: "error",
-      title: `${displayName} was not detected`,
+      title: onEvm ? "Switch Trust Wallet to TRON" : `${displayName} was not detected`,
       message: missingWalletMessage(walletId),
       help: mobileHelp(walletId),
     });
@@ -619,11 +684,16 @@ async function connectSelected(walletId) {
   showState({
     kind: "pending",
     title: "Waiting for your wallet",
-    message: "Approve the connection request. If needed, you will then sign a login message—not a transaction.",
+    message: walletId === "trust"
+      ? "Approve the Trust Wallet TRON connection. You should see a T… address — not a 0x EVM account."
+      : "Approve the connection request. If needed, you will then sign a login message—not a transaction.",
   });
   try {
     const address = await requestAccount(wallet);
     if (!address) throw new Error("The wallet did not return an account.");
+    if ((walletId === "trust" || walletId === "tronlink") && /^0x[0-9a-fA-F]{40}$/.test(address)) {
+      throw new Error(trustWalletSwitchToTronMessage());
+    }
     const { network, chainId } = await resolveSignInNetwork(wallet, address, wallet.provider);
     if (!chainId) {
       throw new Error(network === "tron" || wallet.network === "tron"
@@ -634,11 +704,15 @@ async function connectSelected(walletId) {
     if (walletId === "trust" || walletId === "tronlink" || wallet.network === "tron") {
       const tronSession = requireGenuineTronSessionAddress(address, network);
       if (!tronSession.ok) throw new Error(tronSession.error);
-      const tronWeb = await waitForTronWeb(wallet.provider, { requiredAddress: tronSession.address, maxAttempts: 20 });
+      const tronWeb = await waitForTronWeb(wallet.provider, { requiredAddress: tronSession.address, maxAttempts: 25 });
       const tronReady = tronWeb && typeof tronWeb === "object"
         && typeof /** @type {{ trx?: { getBalance?: unknown } }} */ (tronWeb).trx?.getBalance === "function";
       if (!tronReady) {
-        throw new Error(`A genuine TRON provider session is required before assets can load. ${TRON_IN_APP_BROWSER_HINT}`);
+        throw new Error(
+          walletId === "trust"
+            ? `Trust Wallet did not expose tronWeb yet. ${trustWalletSwitchToTronMessage()}`
+            : `A genuine TRON provider session is required before assets can load. ${TRON_IN_APP_BROWSER_HINT}`,
+        );
       }
     }
 
@@ -1574,7 +1648,10 @@ function collectStrings(value, depth = 0) {
 function missingWalletMessage(walletId) {
   if (walletId === "metamask") return "Install or unlock MetaMask, or open this page in its mobile browser.";
   if (walletId === "trust") {
-    return `Trust Wallet’s TRON provider was not detected. ${TRON_IN_APP_BROWSER_HINT}`;
+    if (trustWalletOpenOnEvmOnly(window) || isInsideTrustWallet(window)) {
+      return trustWalletSwitchToTronMessage();
+    }
+    return `Trust Wallet’s TRON provider was not detected. ${trustWalletSwitchToTronMessage()}`;
   }
   if (walletId === "tronlink") {
     return `TronLink was not detected. ${TRON_IN_APP_BROWSER_HINT}`;

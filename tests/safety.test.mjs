@@ -55,10 +55,17 @@ describe("source safety", () => {
     const walletState = readFileSync(path.join(root, "src/wallet-state.mjs"), "utf8");
     assert.match(walletState, /TRUST_WALLET_TRON_COIN_ID = 195/);
     assert.match(walletState, /rejectEvmOnlyWalletConnectMessage/);
+    assert.match(walletState, /discoverTrustTronProvider/);
+    assert.match(walletState, /trustWalletSwitchToTronMessage/);
+    assert.match(walletState, /wrapTronWebAsProvider/);
+    assert.match(landing, /discoverTrustTronProvider/);
+    assert.match(landing, /waitForTrustTronProvider/);
+    assert.match(landing, /trust-tron-network-hint/);
     assert.match(walletConnect, /walletConnectSessionIsEvmOnly/);
     assert.match(walletConnect, /rejectEvmOnlyWalletConnectMessage/);
     assert.match(html, /TRON only · EVM-only sessions rejected/);
-    assert.match(html, /TRON in-app browser required/);
+    assert.match(html, /Switch network to TRON \(TRX\) first · coin_id=195/);
+    assert.match(html, /id="trust-tron-network-hint"/);
     const evmPublic = readFileSync(path.join(root, "src/evm-public.mjs"), "utf8");
     assert.match(evmPublic, /fetchBlockscoutErc20Balances/);
     assert.match(landing, /publishProviderSnapshot/);

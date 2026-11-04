@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   TRUST_WALLET_TRON_COIN_ID,
+  discoverTrustTronProvider,
   evaluateSessionRestore,
   firstEvmAddress,
   identifyEvmProvider,
+  isInsideTrustWallet,
   normalizeEvmChainId,
   rejectEvmOnlyWalletConnectMessage,
   requireGenuineTronSessionAddress,
@@ -13,8 +15,11 @@ import {
   selectWalletProvider,
   shortenWalletAddress,
   tronAddressFromWalletConnectSession,
+  trustWalletOpenOnEvmOnly,
+  trustWalletSwitchToTronMessage,
   walletConnectSessionIsEvmOnly,
   walletHelpLink,
+  wrapTronWebAsProvider,
 } from "../src/wallet-state.mjs";
 
 const evmAddress = "0x1111111111111111111111111111111111111111";
@@ -46,6 +51,42 @@ describe("wallet provider selection", () => {
     const providers = [trustEvm, trustTron];
     assert.equal(selectWalletProvider(providers, "trust", "tron"), trustTron);
     assert.equal(selectWalletProvider(providers, "trust", "evm"), trustEvm);
+  });
+
+  it("does not fall back to Trust EVM when TRON was requested", () => {
+    const trustEvm = { id: "trust", network: "evm", provider: { isTrust: true } };
+    assert.equal(selectWalletProvider([trustEvm], "trust", "tron"), null);
+  });
+
+  it("discovers Trust TRON from tronWeb-only injection and detects EVM-only Trust", async () => {
+    const tronAddress = "TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9";
+    const tronWeb = {
+      defaultAddress: { base58: tronAddress },
+      trx: { getBalance: async () => 0, getBlockByNumber: async () => ({ blockID: "x" }) },
+    };
+    const trustView = {
+      trustwallet: { ethereum: { request: async () => [], isTrust: true } },
+      ethereum: { isTrust: true, request: async () => [] },
+      tronWeb,
+      navigator: { userAgent: "Trust/iPhone" },
+    };
+    assert.equal(isInsideTrustWallet(trustView), true);
+    assert.equal(trustWalletOpenOnEvmOnly({
+      trustwallet: { ethereum: { request: async () => [] } },
+      ethereum: { isTrust: true, request: async () => [] },
+      navigator: { userAgent: "Trust" },
+    }), true);
+    const discovered = discoverTrustTronProvider(trustView);
+    assert.ok(discovered);
+    assert.equal(typeof discovered?.request, "function");
+    const accounts = await discovered.request({ method: "tron_requestAccounts" });
+    assert.equal(/** @type {{ address?: string }} */ (accounts).address, tronAddress);
+    assert.match(trustWalletSwitchToTronMessage(), /switch/i);
+    assert.match(trustWalletSwitchToTronMessage(), /coin_id=195/);
+
+    const wrapped = wrapTronWebAsProvider(tronWeb, { isTrust: true });
+    await assert.rejects(() => wrapTronWebAsProvider({ trx: {} }, { isTrust: true }).request({ method: "tron_requestAccounts" }), /TRON|EVM|switch/i);
+    assert.equal(wrapped.isTrust, true);
   });
 });
 
