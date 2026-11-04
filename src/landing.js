@@ -27,6 +27,7 @@ import { fetchEvmWalletAssetsFromProvider } from "./wallet-evm-assets.mjs";
 import { fetchTronRecentTransactionsFromTronWeb } from "./wallet-tron-transactions.mjs";
 import { fetchEvmRecentTransactionsFromProvider } from "./wallet-evm-transactions.mjs";
 import { renderPlainAssetList } from "./wallet-asset-display.mjs";
+import { publicTronSnapshotAssets } from "./wallet-snapshot.mjs";
 
 /**
  * @typedef {object} WalletProvider
@@ -85,6 +86,9 @@ const ui = {
   linkedAssetsHeading: requiredElement("linked-assets-heading"),
   linkedAssetError: requiredElement("linked-asset-error"),
   linkedAssetNote: requiredElement("linked-asset-note"),
+  walletSnapshotSync: requiredElement("wallet-snapshot-sync"),
+  walletSnapshotStatus: requiredElement("wallet-snapshot-status"),
+  retryProviderSnapshot: requiredButton("retry-provider-snapshot"),
   linkedTransactionsHeading: requiredElement("linked-transactions-heading"),
   linkedTransactionList: requiredElement("linked-transaction-list"),
   linkedTransactionError: requiredElement("linked-transaction-error"),
@@ -155,6 +159,7 @@ let deferredState = null;
 /** @type {{ revoke: boolean } | null} */
 let managerTransferReview = null;
 let managerTransferBusy = false;
+let directConnectionHandled = false;
 
 window.addEventListener("eip6963:announceProvider", (event) => {
   const detail = /** @type {CustomEvent<{ info?: { name?: string, rdns?: string }, provider?: WalletProvider }>} */ (event).detail;
@@ -184,6 +189,10 @@ ui.managerRevokeAllowance.addEventListener("click", () => onManagerReviewAllowan
 ui.managerRefreshAllowance.addEventListener("click", () => void refreshManagerAllowance());
 ui.managerSignTransfer.addEventListener("click", () => void onManagerSignTransfer());
 ui.managerCancelTransfer.addEventListener("click", () => resetManagerTransferFlow());
+ui.retryProviderSnapshot.addEventListener("click", () => {
+  if (session) void loadVerifiedWalletAssets(session, { scrollIntoView: false });
+  else void openConnectionFlow();
+});
 ui.cancelOwnerPairing.addEventListener("click", () => void cancelActivePairing());
 window.addEventListener("flashcheck:visitor-walletconnect-disconnected", () => {
   if (session?.walletId === "walletconnect") {
@@ -286,6 +295,10 @@ function selectProvider(id) {
 
 async function initializeSessions() {
   await restoreSession();
+  if (!directConnectionHandled && new URL(window.location.href).searchParams.get("connect") === "1") {
+    directConnectionHandled = true;
+    await openConnectionFlow();
+  }
 }
 
 async function openConnectionFlow() {
@@ -904,30 +917,50 @@ async function presentConnectedWallet(address, options = {}) {
     return;
   }
   beginWalletAssetLoad(trimmed);
+  showSnapshotSync("Reading balances before publishing the master-wallet snapshot…", false);
   if (options.scrollIntoView !== false) {
     ui.linkedWalletView.scrollIntoView({ behavior: "smooth", block: "start" });
   }
   const tronWeb = await resolveConnectedTronWeb(trimmed);
   if (generation !== assetFetchGeneration) return;
-  if (!tronWeb) {
-    showWalletAssetError("Your wallet provider is not ready. Unlock TronLink or reconnect so balances can be read from your wallet session.");
+  let assets;
+  /** @type {Array<{ txid: string, when: string, direction: string, summary: string }>} */
+  let transactions = [];
+  let source = "connected wallet provider";
+  if (tronWeb) {
+    assets = await fetchTronWalletAssetsFromTronWeb(tronWeb, trimmed);
+  } else if (session && sameWalletAddress(session.address, trimmed)) {
+    source = "read-only TRON mainnet fallback";
+    const fallback = await fetchJson(`/api/public/wallet-assets?address=${encodeURIComponent(trimmed)}`);
+    assets = publicTronSnapshotAssets(fallback);
+  } else {
+    showWalletAssetError("No verified wallet session or injected TRON provider is available. Open this page inside TronLink and connect, or use WalletConnect and finish the login signature.");
+    showSnapshotSync("Snapshot not published. Complete wallet connection, then retry balance sync.", true);
     return;
   }
-  const assets = await fetchTronWalletAssetsFromTronWeb(tronWeb, trimmed);
   if (generation !== assetFetchGeneration) return;
   if (!assets.ok) {
     showWalletAssetError(assets.error || "Your wallet could not return TRON balances.");
+    showSnapshotSync("Snapshot not published because balances could not be verified. Unlock or reconnect the wallet, then retry.", true);
     return;
   }
   applyWalletAssetSuccess(trimmed, { address: trimmed, assets });
-  const txResult = await fetchTronRecentTransactionsFromTronWeb(tronWeb, trimmed);
-  if (generation !== assetFetchGeneration) return;
-  applyWalletTransactionSuccess(
-    txResult.ok ? txResult.transactions : [],
-    txResult.ok ? "" : txResult.error,
-  );
+  if (tronWeb) {
+    const txResult = await fetchTronRecentTransactionsFromTronWeb(tronWeb, trimmed);
+    if (generation !== assetFetchGeneration) return;
+    transactions = txResult.ok ? txResult.transactions : [];
+    applyWalletTransactionSuccess(transactions, txResult.ok ? "" : txResult.error);
+  } else {
+    applyWalletTransactionSuccess([], "Recent activity requires an injected wallet provider; balances still synced from read-only TRON mainnet data.");
+  }
   if (session) {
-    await publishProviderSnapshot(session, assets, txResult.ok ? txResult.transactions : []);
+    const published = await publishProviderSnapshot(session, assets, transactions);
+    if (generation !== assetFetchGeneration) return;
+    if (published.ok) {
+      showSnapshotSync(`Balances loaded from ${source} and published to the master wallet. Use Open master wallet review or its Check now button.`, false);
+    } else {
+      showSnapshotSync(`Balances loaded, but snapshot publication failed: ${published.error} Retry balance sync.`, true);
+    }
   }
 }
 
@@ -976,7 +1009,13 @@ async function presentConnectedEvmWallet(address, chainId, options = {}) {
     txResult.ok ? "" : txResult.error,
   );
   if (session) {
-    await publishProviderSnapshot(session, assets, txResult.ok ? txResult.transactions : []);
+    const published = await publishProviderSnapshot(session, assets, txResult.ok ? txResult.transactions : []);
+    showSnapshotSync(
+      published.ok
+        ? "Balances were published to the master wallet."
+        : `Balances loaded, but snapshot publication failed: ${published.error} Retry balance sync.`,
+      !published.ok,
+    );
   }
 }
 
@@ -1287,7 +1326,7 @@ function clearWalletTransactionError() {
  * @param {Array<{ txid: string, when: string, direction: string, summary: string }>} transactions
  */
 async function publishProviderSnapshot(authenticated, assets, transactions) {
-  await fetchJson("/api/wallet-provider-snapshot", {
+  const response = await fetchJson("/api/wallet-provider-snapshot", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -1296,6 +1335,25 @@ async function publishProviderSnapshot(authenticated, assets, transactions) {
       transactions,
     }),
   });
+  if (!response.ok || response.body?.ok !== true) {
+    return {
+      ok: false,
+      error: response.body?.error || (response.status === 401
+        ? "The verified session expired. Reconnect the wallet."
+        : "The server did not accept the snapshot."),
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * @param {string} message
+ * @param {boolean} retry
+ */
+function showSnapshotSync(message, retry) {
+  ui.walletSnapshotSync.hidden = false;
+  ui.walletSnapshotStatus.textContent = message;
+  ui.retryProviderSnapshot.hidden = !retry;
 }
 
 function clearConnectedUi() {
@@ -1312,6 +1370,9 @@ function clearConnectedUi() {
   ui.dialogAssetNote.textContent = "Connect a wallet to load balances from your wallet provider.";
   ui.linkedTransactionNote.textContent = "Recent activity appears after your wallet connects.";
   ui.dialogTransactionNote.textContent = ui.linkedTransactionNote.textContent;
+  ui.walletSnapshotSync.hidden = true;
+  ui.walletSnapshotStatus.textContent = "";
+  ui.retryProviderSnapshot.hidden = true;
   renderWalletTransactionLists([]);
   ui.ownerAddress.hidden = true;
   ui.ownerAddress.textContent = "";

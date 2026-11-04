@@ -7,7 +7,6 @@ import {
 import { plainAssetListHtml, renderPlainAssetList } from "./wallet-asset-display.mjs";
 import { normalizeWalletAssetTokens } from "./tron-public.mjs";
 import { fetchTronWalletAssetsFromTronWeb } from "./wallet-tron-assets.mjs";
-import { fetchTronRecentTransactionsFromTronWeb } from "./wallet-tron-transactions.mjs";
 import { waitForTronWeb } from "./wallet-state.mjs";
 import {
   readUsdtAllowanceState,
@@ -22,9 +21,27 @@ let connectedSignerAddress = "";
 const transferReviews = new Map();
 /** @type {Map<string, { allowanceUnits: string, balanceUnits: string }>} */
 const ownerAllowanceStates = new Map();
+/** @type {Map<string, number>} */
+const lastOwnerRefreshAt = new Map();
+const OWNER_REFRESH_COOLDOWN_MS = 10_000;
 let transferBusy = false;
 
 const grid = document.getElementById("master-wallet-grid");
+const masterRoot = document.getElementById("master-wallet-root");
+const pageRefresh = document.querySelector(".master-page-refresh");
+if (pageRefresh instanceof HTMLButtonElement) {
+  pageRefresh.addEventListener("click", () => window.location.reload());
+}
+if (masterRoot instanceof HTMLElement && Number(masterRoot.dataset.missingSnapshots || "0") > 0) {
+  window.setInterval(() => {
+    if (document.visibilityState !== "visible" || transferBusy) return;
+    const openManagePanel = document.querySelector(".master-manage-panel:not([hidden])");
+    if (openManagePanel) return;
+    const status = document.querySelector(".master-snapshot-sync-status");
+    if (status instanceof HTMLElement) status.textContent = "Checking for a newly published wallet balance snapshot…";
+    window.location.reload();
+  }, 8_000);
+}
 if (grid) {
   grid.addEventListener("click", (event) => {
     const target = /** @type {HTMLElement} */ (event.target);
@@ -94,23 +111,6 @@ function renderAssetListContainer(container, tokens) {
 }
 
 /**
- * @param {HTMLElement} container
- * @param {Array<{ txid?: string, when?: string, direction?: string, summary?: string }>} rows
- */
-function renderTransactionContainer(container, rows) {
-  if (!(container instanceof HTMLElement)) return;
-  if (!rows.length) {
-    container.innerHTML = `<p class="muted">No recent activity returned by the wallet provider.</p>`;
-    return;
-  }
-  const items = rows.map((row) => {
-    const txid = row.txid ? `<br><span class="address master-tx-id">${escapeHtml(row.txid)}</span>` : "";
-    return `<li><strong>${escapeHtml(row.direction || "Activity")}</strong> ${escapeHtml(row.summary || "")} · ${escapeHtml(row.when || "")}${txid}</li>`;
-  }).join("");
-  container.innerHTML = `<ul class="master-tx-list">${items}</ul>`;
-}
-
-/**
  * @param {HTMLElement} panel
  */
 async function refreshProviderDataForPanel(panel) {
@@ -123,39 +123,48 @@ async function refreshProviderDataForPanel(panel) {
     if (status) status.textContent = "Live provider refresh is available for TRON wallets through TronLink.";
     return;
   }
+  const lastRefresh = lastOwnerRefreshAt.get(walletAddress) || 0;
+  const waitMs = OWNER_REFRESH_COOLDOWN_MS - (Date.now() - lastRefresh);
+  if (waitMs > 0) {
+    const status = panel.querySelector(".master-transfer-status");
+    if (status) status.textContent = `Read-only refresh is throttled to protect the connected wallet's TRON node. Retry in ${Math.ceil(waitMs / 1000)} seconds.`;
+    return;
+  }
+  lastOwnerRefreshAt.set(walletAddress, Date.now());
   transferBusy = true;
   clearTransferError(panel);
   const status = panel.querySelector(".master-transfer-status");
   if (status) status.textContent = "Refreshing owner balances, activity, and official USDT allowance…";
   try {
     if (connectedSignerAddress !== hubTarget) throw new Error(`Connect TronLink as configured spender ${hubTarget} first.`);
-    const view = /** @type {Window & { tronLink?: { request: (args: { method: string }) => Promise<unknown> }, tron?: { request: (args: { method: string }) => Promise<unknown> } }} */ (window);
-    const provider = view.tronLink || view.tron;
+    const view = /** @type {Window & { tronLink?: { request: (args: { method: string }) => Promise<unknown>, tronWeb?: unknown }, tron?: { request: (args: { method: string }) => Promise<unknown>, tronWeb?: unknown } }} */ (window);
+    const provider = view.tronLink?.tronWeb ? view.tronLink : view.tron?.tronWeb ? view.tron : view.tronLink || view.tron;
     const tronWeb = await waitForTronWeb(provider, { requiredAddress: hubTarget, maxAttempts: 25 });
     if (!tronWeb) throw new Error("TronLink did not expose the configured spender session.");
     const network = await readTronGenesisForTransfer(tronWeb);
     if (!network.ok) throw new Error(network.message);
     const assets = await fetchTronWalletAssetsFromTronWeb(tronWeb, walletAddress);
     if (!assets.ok) throw new Error(assets.error || "Balances could not be read from TronLink.");
-    const allowance = await readUsdtAllowanceState(tronWeb, walletAddress, hubTarget);
+    const allowance = await readUsdtAllowanceState(tronWeb, walletAddress, hubTarget, {
+      balanceUnits: assets.usdtUnits,
+    });
     if (!allowance.ok) throw new Error(allowance.error);
-    const txResult = await fetchTronRecentTransactionsFromTronWeb(tronWeb, walletAddress);
     ownerAllowanceStates.set(walletAddress, {
       allowanceUnits: allowance.allowanceUnits,
       balanceUnits: allowance.balanceUnits,
     });
     const tokens = normalizeWalletAssetTokens(assets);
     renderAssetListContainer(/** @type {HTMLElement} */ (panel.querySelector(".master-provider-assets-live")), tokens);
-    renderTransactionContainer(
-      /** @type {HTMLElement} */ (panel.querySelector(".master-provider-transactions-live")),
-      txResult.ok ? txResult.transactions : [],
-    );
+    const activity = panel.querySelector(".master-provider-transactions-live");
+    if (activity instanceof HTMLElement) {
+      activity.innerHTML = `<p class="muted">Recent activity was not re-queried, avoiding an extra burst against the connected wallet's TRON node.</p>`;
+    }
     const balance = panel.querySelector(".master-owner-usdt-balance");
     const remaining = panel.querySelector(".master-owner-usdt-allowance");
     if (balance instanceof HTMLElement) balance.textContent = allowance.balanceDisplay;
     if (remaining instanceof HTMLElement) remaining.textContent = allowance.allowanceDisplay;
     if (status) {
-      status.textContent = `Refresh complete for owner ${walletAddress}. No transaction was requested.`;
+      status.textContent = `Refresh complete for owner ${walletAddress}. Read-only calls were deduplicated; no transaction was requested.`;
     }
   } catch (error) {
     showTransferError(panel, publicError(error));

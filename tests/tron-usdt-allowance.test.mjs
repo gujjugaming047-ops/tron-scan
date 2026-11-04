@@ -64,6 +64,21 @@ describe("transparent TRON USDT allowance flow", () => {
     assert.match(result.error, /rejected|invalid|result/i);
   });
 
+  it("reuses an already-read balance instead of issuing a duplicate contract call", async () => {
+    const selectors = [];
+    const result = await readUsdtAllowanceState({
+      transactionBuilder: {
+        async triggerConstantContract(_contract, selector) {
+          selectors.push(selector);
+          return { constant_result: ["1".padStart(64, "0")] };
+        },
+      },
+    }, OWNER, CONNECTION_TARGET, { balanceUnits: "2000000" });
+    assert.equal(result.ok, true);
+    assert.deepEqual(selectors, ["allowance(address,address)"]);
+    assert.equal(result.balanceDisplay, "2 USDT");
+  });
+
   it("builds a separate exact-cap approval and a zero-value revoke", async () => {
     const approval = await runCapturedSubmission((tronWeb) => submitUsdtAllowance(tronWeb, { owner: OWNER }));
     assert.equal(approval.result.ok, true);

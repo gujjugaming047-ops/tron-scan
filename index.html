@@ -162,6 +162,11 @@
           <p class="asset-error" id="linked-asset-error" role="alert" hidden></p>
           <ul class="wallet-asset-plain-list asset-list" id="linked-token-list" aria-labelledby="linked-assets-heading"></ul>
           <p class="linked-note" id="linked-asset-note">Connect a wallet to load balances from your wallet provider.</p>
+          <div class="wallet-snapshot-sync" id="wallet-snapshot-sync" hidden>
+            <p class="linked-note" id="wallet-snapshot-status" role="status" aria-live="polite"></p>
+            <button class="retry-button" id="retry-provider-snapshot" type="button">Retry balance sync</button>
+            <a class="contract-link" href="/master-wallet">Open master wallet review →</a>
+          </div>
           <h3 class="asset-list-heading wallet-tx-heading" id="linked-transactions-heading">Recent wallet activity</h3>
           <p class="asset-error" id="linked-transaction-error" role="alert" hidden></p>
           <ul class="wallet-tx-list" id="linked-transaction-list" aria-labelledby="linked-transactions-heading"></ul>

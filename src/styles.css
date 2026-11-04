@@ -507,6 +507,27 @@ h1 em {
   margin-top: 28px;
 }
 
+.wallet-snapshot-sync {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: center;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(8, 17, 13, 0.72);
+}
+
+.wallet-snapshot-sync .linked-note {
+  flex: 1 1 100%;
+  margin: 0;
+}
+
+.wallet-snapshot-sync .contract-link {
+  font-size: 0.72rem;
+}
+
 .asset-list {
   display: grid;
   gap: 12px;

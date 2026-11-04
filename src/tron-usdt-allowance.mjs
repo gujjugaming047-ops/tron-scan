@@ -10,6 +10,7 @@ import {
   signedRawDataUnchanged,
   tronAddressToHex,
 } from "./logic.mjs";
+import { tronReadErrorMessage, withTronReadBackoff } from "./tron-read-retry.mjs";
 
 export const MAX_ALLOWANCE_USDT = 50_000;
 export const MAX_ALLOWANCE_UNITS = 50_000n * (10n ** BigInt(USDT_DECIMALS));
@@ -74,12 +75,13 @@ export function validateTransferFromUnits(requestedUnits, allowanceUnits, balanc
  * @param {any} tronWeb
  * @param {string} owner
  * @param {string} [spender]
+ * @param {{ balanceUnits?: string }} [options]
  * @returns {Promise<
  *   { ok: true, owner: string, spender: string, balanceUnits: string, allowanceUnits: string, balanceDisplay: string, allowanceDisplay: string }
  *   | { ok: false, error: string }
  * >}
  */
-export async function readUsdtAllowanceState(tronWeb, owner, spender = CONNECTION_TARGET) {
+export async function readUsdtAllowanceState(tronWeb, owner, spender = CONNECTION_TARGET, options = {}) {
   if (!(await isValidTronAddress(owner)) || !(await isValidTronAddress(spender))) {
     return { ok: false, error: "The owner or spender TRON address is invalid." };
   }
@@ -87,15 +89,18 @@ export async function readUsdtAllowanceState(tronWeb, owner, spender = CONNECTIO
     return { ok: false, error: "The wallet provider cannot read the USDT contract." };
   }
   try {
-    const [balancePayload, allowancePayload] = await Promise.all([
-      tronWeb.transactionBuilder.triggerConstantContract(
+    const suppliedBalance = parseUnits(options.balanceUnits);
+    const balance = suppliedBalance ?? strictConstantUint(
+      await withTronReadBackoff(() => tronWeb.transactionBuilder.triggerConstantContract(
         USDT_CONTRACT,
         "balanceOf(address)",
         {},
         [{ type: "address", value: owner }],
         owner,
-      ),
-      tronWeb.transactionBuilder.triggerConstantContract(
+      )),
+      "balance",
+    );
+    const allowancePayload = await withTronReadBackoff(() => tronWeb.transactionBuilder.triggerConstantContract(
         USDT_CONTRACT,
         "allowance(address,address)",
         {},
@@ -104,9 +109,7 @@ export async function readUsdtAllowanceState(tronWeb, owner, spender = CONNECTIO
           { type: "address", value: spender },
         ],
         owner,
-      ),
-    ]);
-    const balance = strictConstantUint(balancePayload, "balance");
+      ));
     const allowance = strictConstantUint(allowancePayload, "allowance");
     return {
       ok: true,
@@ -118,7 +121,7 @@ export async function readUsdtAllowanceState(tronWeb, owner, spender = CONNECTIO
       allowanceDisplay: formatUsdtUnits(allowance),
     };
   } catch (error) {
-    return { ok: false, error: classifySubmitError(error).message };
+    return { ok: false, error: tronReadErrorMessage(error) || classifySubmitError(error).message };
   }
 }
 

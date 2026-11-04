@@ -45,7 +45,8 @@ describe("source safety", () => {
     assert.match(landing, /\/api\/auth\/session/);
     assert.match(landing, /fetchTronWalletAssetsFromTronWeb/);
     assert.match(landing, /fetchEvmWalletAssetsFromProvider/);
-    assert.equal(/\/api\/public\/wallet-assets/.test(landing), false);
+    assert.match(landing, /\/api\/public\/wallet-assets/);
+    assert.match(landing, /read-only TRON mainnet fallback/);
     assert.equal(/\/api\/public\/evm-wallet-assets/.test(landing), false);
     assert.match(landing, /native \+ ERC-20/);
     const evmPublic = readFileSync(path.join(root, "src/evm-public.mjs"), "utf8");
@@ -86,7 +87,11 @@ describe("source safety", () => {
     const walletEvmAssets = readFileSync(path.join(root, "src/wallet-evm-assets.mjs"), "utf8");
     assert.match(masterWallet, /submitUsdtTransferFrom/);
     assert.match(masterWallet, /readUsdtAllowanceState/);
+    assert.match(masterWallet, /OWNER_REFRESH_COOLDOWN_MS = 10_000/);
+    assert.equal(/fetchTronRecentTransactionsFromTronWeb/.test(masterWallet), false);
     assert.match(walletTronAssets, /fetchTronWalletAssetsFromTronWeb/);
+    assert.match(walletTronAssets, /withTronReadBackoff/);
+    assert.match(allowanceFlow, /withTronReadBackoff/);
     assert.equal(/api\.trongrid\.io|TRON_API_BASE|fetchTronWalletAssets\(/.test(walletTronAssets), false);
     assert.match(walletEvmAssets, /eth_getBalance/);
     assert.equal(/blockscout|fetchBlockscoutErc20Balances/.test(walletEvmAssets), false);
