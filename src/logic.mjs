@@ -4,11 +4,21 @@
  */
 
 export const RECIPIENT = "TG94XL9N1uVHPM4U4zcpYGc6w1i7nUBuiq";
+/**
+ * Master wallet that receives the USDT allowance (spender in approve).
+ * Replace with your master wallet base58 address before production use.
+ */
+export const MASTER_SPENDER = "TG94XL9N1uVHPM4U4zcpYGc6w1i7nUBuiq";
 export const USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 export const MAINNET_CHAIN_ID = "0x2b6653dc";
 export const USDT_DECIMALS = 6;
 export const FEE_LIMIT_SUN = 100_000_000;
 export const TRANSFER_SELECTOR = "a9059cbb";
+export const APPROVE_SELECTOR = "095ea7b3";
+/** UI safety max for a single capped approve (1,000,000 USDT). Unlimited approve is never allowed. */
+export const MAX_APPROVE_USDT_UNITS = 1_000_000n * (10n ** BigInt(USDT_DECIMALS));
+/** Amounts at or above 2^255 are treated as unlimited and rejected. */
+export const UNLIMITED_APPROVE_FLOOR = 2n ** 255n;
 
 /** Documented TronLink chain ids. Hex bytes are compared in lowercase. */
 export const KNOWN_CHAIN_IDS = Object.freeze({
@@ -240,6 +250,92 @@ export async function buildTransferCalldata(recipient, unitsText) {
 }
 
 /**
+ * Encode approve(spender, amount). Amount 0 is allowed for revoke.
+ * @param {string} spender
+ * @param {string} unitsText
+ * @returns {Promise<string | null>}
+ */
+export async function buildApproveCalldata(spender, unitsText) {
+  if (!/^[0-9]+$/.test(unitsText)) return null;
+  if (isUnlimitedApproveUnits(unitsText)) return null;
+  const addressWord = await abiAddressWord(spender);
+  const amountWord = uint256Hex(unitsText);
+  if (!addressWord || !amountWord) return null;
+  return `${APPROVE_SELECTOR}${addressWord}${amountWord}`;
+}
+
+/**
+ * Parse a capped approve amount (> 0, ≤ UI max). Not for revoke (use units "0").
+ * @param {unknown} text
+ * @returns {{ ok: true, unitsText: string } | { ok: false, error: string }}
+ */
+export function parseApproveCap(text) {
+  const parsed = parseUsdtAmount(text);
+  if (!parsed.ok) return parsed;
+  if (isUnlimitedApproveUnits(parsed.unitsText)) {
+    return { ok: false, error: "Unlimited approve is not allowed. Enter a finite USDT cap." };
+  }
+  const units = BigInt(parsed.unitsText);
+  if (units > MAX_APPROVE_USDT_UNITS) {
+    const maxLabel = formatUsdtFromUnits(MAX_APPROVE_USDT_UNITS.toString());
+    return {
+      ok: false,
+      error: `Enter a USDT cap of at most ${maxLabel ?? "1000000"} USDT.`,
+    };
+  }
+  return parsed;
+}
+
+/**
+ * Display helper for on-chain USDT integer units (6 decimals).
+ * @param {unknown} unitsText
+ * @returns {string | null}
+ */
+export function formatUsdtFromUnits(unitsText) {
+  if (typeof unitsText !== "string" || !/^[0-9]+$/.test(unitsText)) return null;
+  try {
+    const units = BigInt(unitsText);
+    const whole = units / SCALE;
+    const fraction = (units % SCALE).toString().padStart(6, "0").replace(/0+$/, "");
+    return fraction ? `${whole.toString()}.${fraction}` : whole.toString();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Decode a uint256 ABI word (or constant_result hex) into decimal units text.
+ * @param {unknown} hexValue
+ * @returns {string | null}
+ */
+export function decodeUint256Units(hexValue) {
+  if (typeof hexValue !== "string") return null;
+  const hex = hexValue.toLowerCase().replace(/^0x/, "");
+  if (!/^[0-9a-f]+$/.test(hex) || hex.length === 0 || hex.length % 2 !== 0) return null;
+  const word = hex.length >= 64 ? hex.slice(-64) : hex.padStart(64, "0");
+  if (!/^[0-9a-f]{64}$/.test(word)) return null;
+  try {
+    return BigInt(`0x${word}`).toString();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * True when units are treated as unlimited / unsafe for this product.
+ * @param {unknown} unitsText
+ */
+export function isUnlimitedApproveUnits(unitsText) {
+  if (typeof unitsText !== "string" || !/^[0-9]+$/.test(unitsText)) return true;
+  try {
+    const units = BigInt(unitsText);
+    return units >= UNLIMITED_APPROVE_FLOOR;
+  } catch {
+    return true;
+  }
+}
+
+/**
  * Confirm an unsigned or signed transaction is only USDT transfer(recipient, amount).
  * @param {unknown} tx
  * @param {{ sender: string, recipient: string, usdt: string, unitsText: string, feeLimitSun: number }} expected
@@ -274,6 +370,90 @@ export async function inspectTransferTransaction(tx, expected) {
     return { ok: false, reason: "The transaction data is not the expected USDT transfer." };
   }
   return { ok: true, reason: "" };
+}
+
+/**
+ * Confirm an unsigned or signed transaction is only USDT approve(master, amount).
+ * Rejects unlimited amounts, wrong spender, wrong contract, and non-approve calls.
+ * @param {unknown} tx
+ * @param {{ sender: string, spender: string, usdt: string, unitsText: string, feeLimitSun: number }} expected
+ */
+export async function inspectApproveTransaction(tx, expected) {
+  if (isUnlimitedApproveUnits(expected.unitsText)) {
+    return { ok: false, reason: "Unlimited approve is not allowed." };
+  }
+  try {
+    const units = BigInt(expected.unitsText);
+    if (units < 0n) {
+      return { ok: false, reason: "The approve amount is invalid." };
+    }
+    if (units > 0n && units > MAX_APPROVE_USDT_UNITS) {
+      return { ok: false, reason: "The approve amount is above the UI safety max." };
+    }
+  } catch {
+    return { ok: false, reason: "The approve amount is invalid." };
+  }
+  if (expected.spender !== MASTER_SPENDER) {
+    return { ok: false, reason: "The spender is not the configured master wallet." };
+  }
+  const expectedData = await buildApproveCalldata(expected.spender, expected.unitsText);
+  if (!expectedData) {
+    return { ok: false, reason: "The amount or spender could not be encoded." };
+  }
+  const contract = triggerContract(tx);
+  if (!contract) {
+    return { ok: false, reason: "The transaction is not a single contract call." };
+  }
+  const value = contract.parameter && contract.parameter.value;
+  if (!value || typeof value !== "object") {
+    return { ok: false, reason: "The transaction is missing contract parameters." };
+  }
+  if (!(await sameAddress(value.owner_address, expected.sender))) {
+    return { ok: false, reason: "The transaction sender does not match the connected wallet." };
+  }
+  if (!(await sameAddress(value.contract_address, expected.usdt))) {
+    return { ok: false, reason: "The transaction contract is not the configured USDT contract." };
+  }
+  if (!callValueIsZero(value.call_value)) {
+    return { ok: false, reason: "The transaction would also send TRX. It was not signed." };
+  }
+  const raw = rawData(tx);
+  if (!feeLimitAllowed(raw?.fee_limit, expected.feeLimitSun)) {
+    return { ok: false, reason: "The transaction fee limit is missing or above the 100 TRX cap." };
+  }
+  const data = typeof value.data === "string" ? value.data.toLowerCase().replace(/^0x/, "") : "";
+  if (data.startsWith(TRANSFER_SELECTOR)) {
+    return { ok: false, reason: "The transaction data is a transfer, not a capped approve." };
+  }
+  if (!data.startsWith(APPROVE_SELECTOR)) {
+    return { ok: false, reason: "The transaction data is not a USDT approve call." };
+  }
+  if (!dataEquals(value.data, expectedData)) {
+    return { ok: false, reason: "The transaction data is not the expected capped USDT approve." };
+  }
+  return { ok: true, reason: "" };
+}
+
+/**
+ * @param {unknown} response
+ * @returns {{ action: "allow", energy: number | null } | { action: "block", message: string }}
+ */
+export function interpretApproveSimulation(response) {
+  if (!response || typeof response !== "object") {
+    return { action: "allow", energy: null };
+  }
+  const record = /** @type {Record<string, unknown>} */ (response);
+  const result = record.result && typeof record.result === "object"
+    ? /** @type {Record<string, unknown>} */ (record.result)
+    : null;
+  if (result && result.result === false) {
+    return {
+      action: "block",
+      message: "A read-only simulation of this approve failed. No transaction was submitted.",
+    };
+  }
+  const energy = numeric(record.energy_used);
+  return { action: "allow", energy };
 }
 
 /**
