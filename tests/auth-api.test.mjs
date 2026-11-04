@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -11,7 +12,8 @@ import {
 } from "../src/logic.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
-const storePath = path.join(root, "data", "connected-wallets.json");
+const storePath = path.join(tmpdir(), `tron-scan-wallets-${process.pid}.json`);
+const originStorePath = `${storePath}.origin`;
 /** @type {import("node:child_process").ChildProcessWithoutNullStreams | undefined} */
 let child;
 let base = "";
@@ -20,13 +22,15 @@ describe("wallet authentication API", () => {
   before(async () => {
     child = spawn(process.execPath, [path.join(root, "scripts", "serve.mjs")], {
       cwd: root,
-      env: { ...process.env, PORT: "0", WALLETCONNECT_PROJECT_ID: "" },
+      env: { ...process.env, PORT: "0", WALLETCONNECT_PROJECT_ID: "", CONNECTED_WALLETS_PATH: storePath },
     });
     base = await previewUrl(child);
   });
 
-  after(() => {
+  after(async () => {
     if (child && child.exitCode == null) child.kill("SIGTERM");
+    await rm(storePath, { force: true });
+    await rm(originStorePath, { force: true });
   });
 
   it("frames static, JSON, HTML, text, and redirect responses without chunking", async () => {
@@ -206,6 +210,7 @@ describe("wallet authentication API", () => {
         PORT: "0",
         WALLETCONNECT_PROJECT_ID: "",
         PUBLIC_ORIGIN: tunnel,
+        CONNECTED_WALLETS_PATH: originStorePath,
       },
     });
     try {

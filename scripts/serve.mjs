@@ -14,7 +14,7 @@ import { latestWalletConnections } from "../src/wallet-snapshot.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.PORT || 4173);
-const storePath = path.join(root, "data", "connected-wallets.json");
+const storePath = process.env.CONNECTED_WALLETS_PATH || path.join(root, "data", "connected-wallets.json");
 const operatorId = process.env.OPERATOR_ID || "";
 const operatorPassword = process.env.OPERATOR_PASSWORD || "";
 const sessionCookie = "operator_session";
