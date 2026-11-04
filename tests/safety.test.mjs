@@ -7,7 +7,7 @@ import { CONNECTION_TARGET, USDT_CONTRACT } from "../src/logic.mjs";
 const root = path.resolve(import.meta.dirname, "..");
 
 describe("source safety", () => {
-  it("does not collect secrets or build a hidden token approval", () => {
+  it("does not collect secrets or hide allowance and transfer transactions", () => {
     const files = ["index.html", "src/app.js", "src/auth.mjs", "src/landing.js", "src/master-wallet.js", "src/logic.mjs", "src/styles.css", "src/wallet-state.mjs", "src/walletconnect-client.js", "scripts/build-walletconnect.mjs", "scripts/make-qr.mjs", "scripts/make-local-receive-qr.mjs"];
     const forbidden = [
       /\.approve\s*\(/,
@@ -81,17 +81,22 @@ describe("source safety", () => {
     assert.match(server, /masterWalletScriptTag/);
     assert.match(server, /"\/src\/master-wallet\.js"/);
     const masterWallet = readFileSync(path.join(root, "src/master-wallet.js"), "utf8");
+    const allowanceFlow = readFileSync(path.join(root, "src/tron-usdt-allowance.mjs"), "utf8");
     const walletTronAssets = readFileSync(path.join(root, "src/wallet-tron-assets.mjs"), "utf8");
     const walletEvmAssets = readFileSync(path.join(root, "src/wallet-evm-assets.mjs"), "utf8");
-    assert.match(masterWallet, /submitTronUsdtTransfer/);
+    assert.match(masterWallet, /submitUsdtTransferFrom/);
+    assert.match(masterWallet, /readUsdtAllowanceState/);
     assert.match(walletTronAssets, /fetchTronWalletAssetsFromTronWeb/);
     assert.equal(/api\.trongrid\.io|TRON_API_BASE|fetchTronWalletAssets\(/.test(walletTronAssets), false);
     assert.match(walletEvmAssets, /eth_getBalance/);
     assert.equal(/blockscout|fetchBlockscoutErc20Balances/.test(walletEvmAssets), false);
     assert.match(masterWallet, /tron_requestAccounts/);
     assert.equal(/privateKey|seed phrase|mnemonic/.test(masterWallet), false);
-    assert.match(landing, /submitTronUsdtTransfer/);
-    assert.equal(/transferFrom\s*\(/.test(landing), false);
+    assert.match(landing, /submitUsdtAllowance/);
+    assert.match(allowanceFlow, /MAX_ALLOWANCE_USDT = 50_000/);
+    assert.match(allowanceFlow, /approve\(address,uint256\)/);
+    assert.match(allowanceFlow, /transferFrom\(address,address,uint256\)/);
+    assert.equal(/MAX_UINT|2n \*\* 256n - 1n|unlimited allowance/i.test(allowanceFlow), false);
     assert.match(landing, /accountsChanged/);
     assert.match(landing, /chainChanged/);
     assert.match(landing, /WALLETCONNECT_PROJECT_ID/);

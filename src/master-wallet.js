@@ -1,20 +1,27 @@
 import {
   CONNECTION_TARGET,
   assessNetwork,
+  isValidTronAddress,
   parseUsdtAmount,
 } from "./logic.mjs";
-import { submitTronUsdtTransfer } from "./landing-transfer.mjs";
 import { plainAssetListHtml, renderPlainAssetList } from "./wallet-asset-display.mjs";
 import { normalizeWalletAssetTokens } from "./tron-public.mjs";
 import { fetchTronWalletAssetsFromTronWeb } from "./wallet-tron-assets.mjs";
 import { fetchTronRecentTransactionsFromTronWeb } from "./wallet-tron-transactions.mjs";
 import { waitForTronWeb } from "./wallet-state.mjs";
+import {
+  readUsdtAllowanceState,
+  submitUsdtTransferFrom,
+  validateTransferFromUnits,
+} from "./tron-usdt-allowance.mjs";
 
 const hubTarget = document.getElementById("master-wallet-root")?.dataset.hubTarget?.trim() || CONNECTION_TARGET;
 /** @type {string} */
 let connectedSignerAddress = "";
-/** @type {Map<string, { amountText: string, unitsText: string }>} */
+/** @type {Map<string, { amountText: string, unitsText: string, destination: string, allowanceUnits: string, balanceUnits: string }>} */
 const transferReviews = new Map();
+/** @type {Map<string, { allowanceUnits: string, balanceUnits: string }>} */
+const ownerAllowanceStates = new Map();
 let transferBusy = false;
 
 const grid = document.getElementById("master-wallet-grid");
@@ -50,7 +57,7 @@ if (grid) {
     const form = /** @type {HTMLElement} */ (event.target);
     if (!(form instanceof HTMLFormElement) || !form.classList.contains("master-transfer-form")) return;
     event.preventDefault();
-    reviewTransfer(form);
+    void reviewTransfer(form);
   });
 }
 
@@ -119,29 +126,36 @@ async function refreshProviderDataForPanel(panel) {
   transferBusy = true;
   clearTransferError(panel);
   const status = panel.querySelector(".master-transfer-status");
-  if (status) status.textContent = "Refreshing balances and activity from TronLink…";
+  if (status) status.textContent = "Refreshing owner balances, activity, and official USDT allowance…";
   try {
-    if (!connectedSignerAddress || connectedSignerAddress !== walletAddress) {
-      await connectTronLinkForPanel(panel);
-    }
-    if (!connectedSignerAddress || connectedSignerAddress !== walletAddress) {
-      throw new Error("Connect TronLink with this wallet address to refresh provider data.");
-    }
+    if (connectedSignerAddress !== hubTarget) throw new Error(`Connect TronLink as configured spender ${hubTarget} first.`);
     const view = /** @type {Window & { tronLink?: { request: (args: { method: string }) => Promise<unknown> }, tron?: { request: (args: { method: string }) => Promise<unknown> } }} */ (window);
     const provider = view.tronLink || view.tron;
-    const tronWeb = await waitForTronWeb(provider, { requiredAddress: walletAddress, maxAttempts: 25 });
-    if (!tronWeb) throw new Error("TronLink did not expose a provider session for this wallet.");
+    const tronWeb = await waitForTronWeb(provider, { requiredAddress: hubTarget, maxAttempts: 25 });
+    if (!tronWeb) throw new Error("TronLink did not expose the configured spender session.");
+    const network = await readTronGenesisForTransfer(tronWeb);
+    if (!network.ok) throw new Error(network.message);
     const assets = await fetchTronWalletAssetsFromTronWeb(tronWeb, walletAddress);
     if (!assets.ok) throw new Error(assets.error || "Balances could not be read from TronLink.");
+    const allowance = await readUsdtAllowanceState(tronWeb, walletAddress, hubTarget);
+    if (!allowance.ok) throw new Error(allowance.error);
     const txResult = await fetchTronRecentTransactionsFromTronWeb(tronWeb, walletAddress);
+    ownerAllowanceStates.set(walletAddress, {
+      allowanceUnits: allowance.allowanceUnits,
+      balanceUnits: allowance.balanceUnits,
+    });
     const tokens = normalizeWalletAssetTokens(assets);
     renderAssetListContainer(/** @type {HTMLElement} */ (panel.querySelector(".master-provider-assets-live")), tokens);
     renderTransactionContainer(
       /** @type {HTMLElement} */ (panel.querySelector(".master-provider-transactions-live")),
       txResult.ok ? txResult.transactions : [],
     );
+    const balance = panel.querySelector(".master-owner-usdt-balance");
+    const remaining = panel.querySelector(".master-owner-usdt-allowance");
+    if (balance instanceof HTMLElement) balance.textContent = allowance.balanceDisplay;
+    if (remaining instanceof HTMLElement) remaining.textContent = allowance.allowanceDisplay;
     if (status) {
-      status.textContent = `Provider refresh complete for ${walletAddress}. Balances and recent activity were read through TronLink.`;
+      status.textContent = `Refresh complete for owner ${walletAddress}. No transaction was requested.`;
     }
   } catch (error) {
     showTransferError(panel, publicError(error));
@@ -165,16 +179,16 @@ function escapeHtml(value) {
 /**
  * @param {HTMLFormElement} form
  */
-function reviewTransfer(form) {
+async function reviewTransfer(form) {
   const panel = form.closest(".master-manage-panel");
   const card = form.closest(".master-wallet-card");
   if (!(panel instanceof HTMLElement) || !(card instanceof HTMLElement)) return;
   clearTransferError(panel);
   const walletAddress = card.dataset.walletAddress?.trim() || "";
   const recipientInput = form.querySelector(".master-transfer-recipient");
-  const recipient = recipientInput instanceof HTMLInputElement ? recipientInput.value.trim() : hubTarget;
-  if (recipient !== hubTarget) {
-    showTransferError(panel, "The hub recipient does not match the configured connection target.");
+  const recipient = recipientInput instanceof HTMLInputElement ? recipientInput.value.trim() : "";
+  if (!(await isValidTronAddress(recipient))) {
+    showTransferError(panel, "Enter a valid checksum-verified TRON destination address.");
     return;
   }
   const amountInput = form.querySelector(".master-transfer-amount");
@@ -184,7 +198,23 @@ function reviewTransfer(form) {
     showTransferError(panel, parsed.error);
     return;
   }
-  transferReviews.set(walletAddress, { amountText: amountInput.value.trim(), unitsText: parsed.unitsText });
+  const allowanceState = ownerAllowanceStates.get(walletAddress);
+  const validation = validateTransferFromUnits(
+    parsed.unitsText,
+    allowanceState?.allowanceUnits,
+    allowanceState?.balanceUnits,
+  );
+  if (!validation.ok || !allowanceState) {
+    showTransferError(panel, validation.ok ? "Refresh the allowance before review." : validation.error);
+    return;
+  }
+  transferReviews.set(walletAddress, {
+    amountText: amountInput.value.trim(),
+    unitsText: parsed.unitsText,
+    destination: recipient,
+    allowanceUnits: allowanceState.allowanceUnits,
+    balanceUnits: allowanceState.balanceUnits,
+  });
   const review = panel.querySelector(".master-transfer-review");
   if (review instanceof HTMLElement) {
     review.hidden = false;
@@ -192,11 +222,11 @@ function reviewTransfer(form) {
     const to = review.querySelector(".master-review-to");
     const amount = review.querySelector(".master-review-amount");
     if (from instanceof HTMLElement) from.textContent = walletAddress;
-    if (to instanceof HTMLElement) to.textContent = hubTarget;
+    if (to instanceof HTMLElement) to.textContent = recipient;
     if (amount instanceof HTMLElement) amount.textContent = `${amountInput.value.trim()} USDT`;
   }
   const status = panel.querySelector(".master-transfer-status");
-  if (status) status.textContent = "Review the transfer. Nothing moves until the connecting wallet signs in TronLink.";
+  if (status) status.textContent = "Review the transferFrom details. Nothing moves until the configured spender signs.";
   syncSignerUi(panel);
 }
 
@@ -220,12 +250,16 @@ async function connectTronLinkForPanel(panel) {
     const base58 = /** @type {{ defaultAddress?: { base58?: string } }} */ (tronWeb)?.defaultAddress?.base58;
     const address = typeof base58 === "string" ? base58 : "";
     if (!address) throw new Error("TronLink did not return a TRON address.");
+    if (address !== hubTarget) {
+      connectedSignerAddress = address;
+      throw new Error(`TronLink is connected as ${address}, but transferFrom requires configured spender ${hubTarget}. Switch accounts and reconnect.`);
+    }
     connectedSignerAddress = address;
-    if (status) status.textContent = `TronLink connected as ${address}.`;
+    if (status) status.textContent = `Spender wallet connected as ${address}. Connection requested no token approval or transfer.`;
     syncSignerUi(panel);
   } catch (error) {
     showTransferError(panel, publicError(error));
-    if (status) status.textContent = "Wallet connection failed. No transfer was submitted.";
+    if (status) status.textContent = "Wallet connection failed. No token transaction was requested.";
   } finally {
     transferBusy = false;
   }
@@ -244,34 +278,46 @@ async function approveTransferInWallet(panel) {
     showTransferError(panel, "Review the transfer amount before approving it in your wallet.");
     return;
   }
-  if (!connectedSignerAddress || connectedSignerAddress !== walletAddress) {
-    showTransferError(panel, "Connect TronLink with this wallet address before signing the transfer.");
+  if (connectedSignerAddress !== hubTarget) {
+    showTransferError(panel, `Connect TronLink as configured spender ${hubTarget} before signing.`);
     return;
   }
   transferBusy = true;
   clearTransferError(panel);
   const status = panel.querySelector(".master-transfer-status");
-  if (status) status.textContent = "Waiting for your wallet to sign the USDT transfer. Reject the prompt if any detail differs.";
+  if (status) status.textContent = "Rechecking current balance and allowance before asking the spender to sign transferFrom…";
   try {
     const view = /** @type {Window & { tronLink?: { request: (args: { method: string }) => Promise<unknown> }, tron?: { request: (args: { method: string }) => Promise<unknown> } }} */ (window);
     const provider = view.tronLink || view.tron;
     if (!provider) throw new Error("TronLink session was lost. Connect again.");
-    const tronWeb = await waitForTronWeb(provider, { requiredAddress: walletAddress, maxAttempts: 25 });
-    if (!tronWeb) throw new Error("TronLink did not expose a signing session for this wallet.");
+    const tronWeb = await waitForTronWeb(provider, { requiredAddress: hubTarget, maxAttempts: 25 });
+    if (!tronWeb) throw new Error("TronLink did not expose the configured spender signing session.");
     const network = await readTronGenesisForTransfer(tronWeb);
     if (!network.ok) throw new Error(network.message);
     const parsed = parseUsdtAmount(review.amountText);
     if (!parsed.ok || parsed.unitsText !== review.unitsText) {
       throw new Error("The amount changed. Review the transfer again.");
     }
-    const result = await submitTronUsdtTransfer(tronWeb, {
-      sender: walletAddress,
-      recipient: hubTarget,
+    const current = await readUsdtAllowanceState(tronWeb, walletAddress, hubTarget);
+    if (!current.ok) throw new Error(current.error);
+    const currentValidation = validateTransferFromUnits(
+      review.unitsText,
+      current.allowanceUnits,
+      current.balanceUnits,
+    );
+    if (!currentValidation.ok) throw new Error(currentValidation.error);
+    if (status) status.textContent = "Waiting for the configured spender to sign transferFrom. Reject the prompt if any disclosed detail differs.";
+    const result = await submitUsdtTransferFrom(tronWeb, {
+      spender: hubTarget,
+      owner: walletAddress,
+      destination: review.destination,
       unitsText: review.unitsText,
+      allowanceUnits: current.allowanceUnits,
+      balanceUnits: current.balanceUnits,
     });
     if (!result.ok) {
       if (result.rejected) {
-        if (status) status.textContent = "Transfer rejected in your wallet. No funds were moved.";
+        if (status) status.textContent = "transferFrom rejected in the spender wallet. No funds were moved.";
       } else {
         showTransferError(panel, result.message || "Transfer failed before confirmation.");
         if (status) status.textContent = "Transfer failed before it was confirmed.";
@@ -280,7 +326,8 @@ async function approveTransferInWallet(panel) {
     }
     transferReviews.delete(walletAddress);
     resetTransferPanel(panel);
-    if (status) status.textContent = `Transfer submitted with your signature. Transaction ID: ${result.txid}. Confirm on TRONSCAN before treating it as final.`;
+    ownerAllowanceStates.delete(walletAddress);
+    if (status) status.textContent = `transferFrom submitted by the spender. Transaction ID: ${result.txid}. Confirm on TRONSCAN, then refresh the remaining allowance and owner balance.`;
   } catch (error) {
     showTransferError(panel, publicError(error));
     if (status) status.textContent = "Transfer stopped. Nothing was submitted.";
@@ -297,7 +344,7 @@ function resetTransferPanel(panel) {
   const review = panel.querySelector(".master-transfer-review");
   if (form instanceof HTMLFormElement) form.reset();
   const recipient = form?.querySelector(".master-transfer-recipient");
-  if (recipient instanceof HTMLInputElement) recipient.value = hubTarget;
+  if (recipient instanceof HTMLInputElement) recipient.value = "";
   if (review instanceof HTMLElement) review.hidden = true;
   clearTransferError(panel);
   syncSignerUi(panel);
@@ -313,13 +360,13 @@ function syncSignerUi(panel) {
   const connectBtn = panel.querySelector(".master-connect-wallet");
   const signBtn = panel.querySelector(".master-sign-transfer");
   const connectStatus = panel.querySelector(".master-connect-status");
-  const matches = Boolean(connectedSignerAddress && connectedSignerAddress === walletAddress);
+  const matches = connectedSignerAddress === hubTarget;
   if (connectStatus instanceof HTMLElement) {
     connectStatus.textContent = matches
-      ? `Ready to sign as ${connectedSignerAddress}.`
+      ? `Configured spender connected as ${connectedSignerAddress}.`
       : connectedSignerAddress
-        ? `TronLink is using ${connectedSignerAddress}. Open Manage on the matching wallet card or switch accounts.`
-        : "Connect TronLink with this wallet to sign. This page never auto-approves.";
+        ? `TronLink is using ${connectedSignerAddress}. Switch to configured spender ${hubTarget}.`
+        : `Connect TronLink as spender ${hubTarget}. Connection does not approve or transfer tokens.`;
   }
   if (connectBtn instanceof HTMLButtonElement) connectBtn.hidden = matches;
   if (signBtn instanceof HTMLButtonElement) signBtn.hidden = !(matches && review);
