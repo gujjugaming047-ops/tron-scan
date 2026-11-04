@@ -13,10 +13,12 @@ import {
   resolveSignInNetwork,
   sameWalletAddress,
   selectWalletProvider,
+  shouldOfferTrustTronDeepLink,
   shortenWalletAddress,
   tronAddressFromWalletConnectSession,
   trustWalletOpenOnEvmOnly,
   trustWalletSwitchToTronMessage,
+  trustWalletTronDeepLink,
   walletConnectSessionIsEvmOnly,
   walletHelpLink,
   wrapTronWebAsProvider,
@@ -81,11 +83,15 @@ describe("wallet provider selection", () => {
     assert.equal(typeof discovered?.request, "function");
     const accounts = await discovered.request({ method: "tron_requestAccounts" });
     assert.equal(/** @type {{ address?: string }} */ (accounts).address, tronAddress);
-    assert.match(trustWalletSwitchToTronMessage(), /switch/i);
+    assert.match(trustWalletSwitchToTronMessage(), /EVM network/i);
     assert.match(trustWalletSwitchToTronMessage(), /coin_id=195/);
+    assert.match(trustWalletSwitchToTronMessage(), /Open in Trust Wallet on TRON/);
 
     const wrapped = wrapTronWebAsProvider(tronWeb, { isTrust: true });
-    await assert.rejects(() => wrapTronWebAsProvider({ trx: {} }, { isTrust: true }).request({ method: "tron_requestAccounts" }), /TRON|EVM|switch/i);
+    await assert.rejects(
+      () => wrapTronWebAsProvider({ trx: {} }, { isTrust: true }).request({ method: "tron_requestAccounts" }),
+      /TRON|EVM|Open in Trust Wallet/i,
+    );
     assert.equal(wrapped.isTrust, true);
   });
 });
@@ -123,7 +129,23 @@ describe("wallet session state", () => {
     assert.match(trustMobile, /^https:\/\/link\.trustwallet\.com\/open_url/);
     assert.match(trustMobile, new RegExp(`coin_id=${TRUST_WALLET_TRON_COIN_ID}`));
     assert.equal(trustMobile.includes("coin_id=60"), false);
+    assert.match(trustMobile, /trust_tron%3D1|trust_tron=1/);
     assert.equal(walletHelpLink("tronlink", { ...page, mobile: true })?.href, "https://www.tronlink.org/");
+
+    const deep = trustWalletTronDeepLink("https://check.example/path?x=1");
+    assert.match(deep, new RegExp(`coin_id=${TRUST_WALLET_TRON_COIN_ID}`));
+    assert.equal(/coin_id=60/.test(deep), false);
+    assert.match(deep, /connect%3D1/);
+    assert.match(deep, /trust_tron%3D1/);
+    assert.equal(shouldOfferTrustTronDeepLink({
+      mobile: true, trustTronReady: false, insideTrust: false, trustEvmOnly: false,
+    }), true);
+    assert.equal(shouldOfferTrustTronDeepLink({
+      mobile: false, trustTronReady: false, insideTrust: true, trustEvmOnly: true,
+    }), true);
+    assert.equal(shouldOfferTrustTronDeepLink({
+      mobile: true, trustTronReady: true, insideTrust: true, trustEvmOnly: false,
+    }), false);
   });
 
   it("extracts only a TRON mainnet account from WalletConnect", () => {

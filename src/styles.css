@@ -1028,6 +1028,44 @@ footer span { color: var(--accent); }
   text-underline-offset: 3px;
 }
 
+.trust-tron-reopen {
+  margin: 0 24px 14px;
+  padding: 16px;
+  border: 1px solid #c9a227;
+  background: linear-gradient(180deg, #fff8e1 0%, #fff3cc 100%);
+  border-radius: 14px;
+}
+
+.trust-tron-reopen-kicker {
+  margin: 0 0 4px;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #7a5b00;
+  font-weight: 700;
+}
+
+.trust-tron-reopen-title {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+  color: #2f2400;
+}
+
+.trust-tron-reopen-copy {
+  margin: 0 0 14px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #5c4a1d;
+}
+
+.trust-tron-reopen-cta {
+  display: inline-flex;
+  width: 100%;
+  justify-content: center;
+  box-sizing: border-box;
+  text-decoration: none;
+}
+
 .trust-tron-network-hint {
   margin: 0 24px 12px;
   padding: 10px 12px;

@@ -78,7 +78,14 @@
           </svg>
         </div>
         <h2 id="wallet-title">Connect your Web3 wallet</h2>
-        <p id="wallet-description">Choose a wallet to verify your public address. This checker never asks for a recovery phrase or private key. Trust Wallet users must switch the DApp browser to TRON (TRX) before connecting — Ethereum/EVM sessions cannot load TRON assets.</p>
+        <p id="wallet-description">Choose a wallet to verify your public address. This checker never asks for a recovery phrase or private key. Trust Wallet must use the TRON DApp browser — Ethereum/EVM sessions cannot load TRON assets.</p>
+
+        <aside class="trust-tron-reopen" id="trust-tron-reopen" hidden aria-labelledby="trust-tron-reopen-title">
+          <p class="trust-tron-reopen-kicker">Trust Wallet · TRON required</p>
+          <h3 class="trust-tron-reopen-title" id="trust-tron-reopen-title">Open this page on TRON</h3>
+          <p class="trust-tron-reopen-copy" id="trust-tron-reopen-copy">Trust is on an EVM network right now. Tap below to reopen this same page in Trust Wallet’s TRON browser (coin_id=195).</p>
+          <a class="primary-action trust-tron-reopen-cta" id="trust-tron-reopen-cta" href="#">Open in Trust Wallet on TRON <span aria-hidden="true">→</span></a>
+        </aside>
         <p class="trust-tron-network-hint" id="trust-tron-network-hint" role="status" aria-live="polite" hidden></p>
 
         <section class="owner-pairing" id="owner-pairing" aria-labelledby="owner-pairing-title" hidden>
@@ -119,7 +126,7 @@
           </button>
           <button class="wallet-option" id="connect-trust" type="button">
             <span class="wallet-logo trust-logo" aria-hidden="true">◆</span>
-            <span><strong>Trust Wallet</strong><small>Switch network to TRON (TRX) first · coin_id=195</small></span>
+            <span><strong>Trust Wallet</strong><small id="connect-trust-subtitle">TRON browser · coin_id=195</small></span>
             <span class="option-arrow" aria-hidden="true">→</span>
           </button>
           <button class="wallet-option" id="connect-injected" type="button">

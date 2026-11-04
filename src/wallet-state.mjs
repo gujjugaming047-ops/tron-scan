@@ -87,10 +87,37 @@ export const TRON_IN_APP_BROWSER_HINT =
 
 /**
  * Trust Wallet mobile often opens the DApp browser on Ethereum. Tell the user
- * to switch the active coin/network to TRON before connecting.
+ * to reopen this page in the TRON browser (coin_id=195, never Ethereum 60).
  */
 export function trustWalletSwitchToTronMessage() {
-  return "Trust Wallet is on an EVM network right now, so TRON assets cannot load. In Trust Wallet: open your TRON (TRX) wallet, switch the DApp browser network/coin to TRON, then reload this page and tap Trust Wallet again. Use a TRON deep link with coin_id=195 (not Ethereum 60).";
+  return "Trust Wallet opened this page on an EVM network, so TRON assets cannot load. Tap Open in Trust Wallet on TRON to reopen this same page in the TRON DApp browser (coin_id=195 only), then connect again.";
+}
+
+/**
+ * Build a Trust Wallet deep link that reopens this page in the TRON DApp browser.
+ * Always uses Trust TRON coin id 195. Never the Ethereum coin id.
+ * @param {string} pageHref absolute page URL
+ */
+export function trustWalletTronDeepLink(pageHref) {
+  let target;
+  try {
+    target = new URL(pageHref);
+  } catch {
+    throw new Error("A valid page URL is required for the Trust TRON deep link.");
+  }
+  target.searchParams.set("connect", "1");
+  target.searchParams.set("trust_tron", "1");
+  return `https://link.trustwallet.com/open_url?coin_id=${TRUST_WALLET_TRON_COIN_ID}&url=${encodeURIComponent(target.toString())}`;
+}
+
+/**
+ * True when the Trust TRON deep link should be the primary action (mobile, or
+ * Trust is present but only the EVM provider is injected).
+ * @param {{ mobile: boolean, trustTronReady: boolean, insideTrust: boolean, trustEvmOnly: boolean }} state
+ */
+export function shouldOfferTrustTronDeepLink(state) {
+  if (state.trustTronReady) return false;
+  return state.mobile || state.insideTrust || state.trustEvmOnly;
 }
 
 /**
@@ -256,8 +283,8 @@ export function walletHelpLink(walletId, page) {
   if (walletId === "trust") {
     return page.mobile
       ? {
-        href: `https://link.trustwallet.com/open_url?coin_id=${TRUST_WALLET_TRON_COIN_ID}&url=${encodeURIComponent(page.href)}`,
-        label: "Open in Trust Wallet (TRON)",
+        href: trustWalletTronDeepLink(page.href),
+        label: "Open in Trust Wallet on TRON",
       }
       : { href: "https://trustwallet.com/browser-extension", label: "Get Trust Wallet" };
   }
