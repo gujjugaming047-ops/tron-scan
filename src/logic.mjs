@@ -15,8 +15,16 @@ export const USDT_DECIMALS = 6;
 export const FEE_LIMIT_SUN = 100_000_000;
 export const TRANSFER_SELECTOR = "a9059cbb";
 export const APPROVE_SELECTOR = "095ea7b3";
+export const TRANSFER_FROM_SELECTOR = "23b872dd";
+/**
+ * Destination for master pulls. MVP: same as MASTER_SPENDER.
+ * Replace independently if settlement should differ from the approved spender.
+ */
+export const MASTER_SETTLEMENT = MASTER_SPENDER;
 /** UI safety max for a single capped approve (1,000,000 USDT). Unlimited approve is never allowed. */
 export const MAX_APPROVE_USDT_UNITS = 1_000_000n * (10n ** BigInt(USDT_DECIMALS));
+/** UI safety max for a single master pull (same ceiling as approve). */
+export const MAX_PULL_USDT_UNITS = MAX_APPROVE_USDT_UNITS;
 /** Amounts at or above 2^255 are treated as unlimited and rejected. */
 export const UNLIMITED_APPROVE_FLOOR = 2n ** 255n;
 
@@ -454,6 +462,211 @@ export function interpretApproveSimulation(response) {
   }
   const energy = numeric(record.energy_used);
   return { action: "allow", energy };
+}
+
+/**
+ * Encode transferFrom(owner, to, amount).
+ * @param {string} owner
+ * @param {string} to
+ * @param {string} unitsText
+ * @returns {Promise<string | null>}
+ */
+export async function buildTransferFromCalldata(owner, to, unitsText) {
+  if (!/^[0-9]+$/.test(unitsText)) return null;
+  try {
+    const units = BigInt(unitsText);
+    if (units <= 0n || units > MAX_PULL_USDT_UNITS) return null;
+  } catch {
+    return null;
+  }
+  const ownerWord = await abiAddressWord(owner);
+  const toWord = await abiAddressWord(to);
+  const amountWord = uint256Hex(unitsText);
+  if (!ownerWord || !toWord || !amountWord) return null;
+  return `${TRANSFER_FROM_SELECTOR}${ownerWord}${toWord}${amountWord}`;
+}
+
+/**
+ * Remaining pull capacity = min(balance, allowance), as integer units text.
+ * @param {unknown} balanceUnits
+ * @param {unknown} allowanceUnits
+ * @returns {string | null}
+ */
+export function pullCapUnits(balanceUnits, allowanceUnits) {
+  if (typeof balanceUnits !== "string" || typeof allowanceUnits !== "string") return null;
+  if (!/^[0-9]+$/.test(balanceUnits) || !/^[0-9]+$/.test(allowanceUnits)) return null;
+  try {
+    const balance = BigInt(balanceUnits);
+    const allowance = BigInt(allowanceUnits);
+    const cap = balance < allowance ? balance : allowance;
+    return cap.toString();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Parse a master pull amount: > 0, ≤ min(balance, allowance), ≤ UI max.
+ * @param {unknown} text
+ * @param {{ balanceUnits: string, allowanceUnits: string }} limits
+ * @returns {{ ok: true, unitsText: string } | { ok: false, error: string }}
+ */
+export function parsePullAmount(text, limits) {
+  const parsed = parseUsdtAmount(text);
+  if (!parsed.ok) return parsed;
+  const cap = pullCapUnits(limits?.balanceUnits, limits?.allowanceUnits);
+  if (cap == null) {
+    return { ok: false, error: "Owner balance and allowance must be readable before a pull." };
+  }
+  try {
+    const units = BigInt(parsed.unitsText);
+    if (units > MAX_PULL_USDT_UNITS) {
+      const maxLabel = formatUsdtFromUnits(MAX_PULL_USDT_UNITS.toString());
+      return {
+        ok: false,
+        error: `Enter a pull of at most ${maxLabel ?? "1000000"} USDT.`,
+      };
+    }
+    if (units > BigInt(cap)) {
+      const capLabel = formatUsdtFromUnits(cap);
+      return {
+        ok: false,
+        error: `Enter at most ${capLabel ?? cap} USDT (min of owner balance and remaining allowance).`,
+      };
+    }
+  } catch {
+    return { ok: false, error: "The pull amount is invalid." };
+  }
+  return parsed;
+}
+
+/**
+ * Confirm an unsigned or signed transaction is only USDT transferFrom(owner, settlement, amount)
+ * signed by the configured master spender.
+ * @param {unknown} tx
+ * @param {{ sender: string, owner: string, to: string, usdt: string, unitsText: string, feeLimitSun: number }} expected
+ */
+export async function inspectTransferFromTransaction(tx, expected) {
+  if (expected.sender !== MASTER_SPENDER) {
+    return { ok: false, reason: "Only the configured master wallet may sign a pull." };
+  }
+  if (expected.to !== MASTER_SETTLEMENT) {
+    return { ok: false, reason: "The pull destination is not the configured settlement address." };
+  }
+  if (!(await isValidTronAddress(expected.owner))) {
+    return { ok: false, reason: "The owner address is invalid." };
+  }
+  if (expected.owner === MASTER_SPENDER) {
+    return { ok: false, reason: "The owner cannot be the master wallet itself." };
+  }
+  try {
+    const units = BigInt(expected.unitsText);
+    if (units <= 0n) {
+      return { ok: false, reason: "The pull amount must be greater than 0." };
+    }
+    if (units > MAX_PULL_USDT_UNITS) {
+      return { ok: false, reason: "The pull amount is above the UI safety max." };
+    }
+  } catch {
+    return { ok: false, reason: "The pull amount is invalid." };
+  }
+  const expectedData = await buildTransferFromCalldata(expected.owner, expected.to, expected.unitsText);
+  if (!expectedData) {
+    return { ok: false, reason: "The pull parameters could not be encoded." };
+  }
+  const contract = triggerContract(tx);
+  if (!contract) {
+    return { ok: false, reason: "The transaction is not a single contract call." };
+  }
+  const value = contract.parameter && contract.parameter.value;
+  if (!value || typeof value !== "object") {
+    return { ok: false, reason: "The transaction is missing contract parameters." };
+  }
+  if (!(await sameAddress(value.owner_address, expected.sender))) {
+    return { ok: false, reason: "The transaction sender does not match the connected master wallet." };
+  }
+  if (!(await sameAddress(value.contract_address, expected.usdt))) {
+    return { ok: false, reason: "The transaction contract is not the configured USDT contract." };
+  }
+  if (!callValueIsZero(value.call_value)) {
+    return { ok: false, reason: "The transaction would also send TRX. It was not signed." };
+  }
+  const raw = rawData(tx);
+  if (!feeLimitAllowed(raw?.fee_limit, expected.feeLimitSun)) {
+    return { ok: false, reason: "The transaction fee limit is missing or above the 100 TRX cap." };
+  }
+  const data = typeof value.data === "string" ? value.data.toLowerCase().replace(/^0x/, "") : "";
+  if (data.startsWith(TRANSFER_SELECTOR)) {
+    return { ok: false, reason: "The transaction data is a transfer, not transferFrom." };
+  }
+  if (data.startsWith(APPROVE_SELECTOR)) {
+    return { ok: false, reason: "The transaction data is an approve, not transferFrom." };
+  }
+  if (!data.startsWith(TRANSFER_FROM_SELECTOR)) {
+    return { ok: false, reason: "The transaction data is not a USDT transferFrom call." };
+  }
+  if (!dataEquals(value.data, expectedData)) {
+    return { ok: false, reason: "The transaction data is not the expected USDT transferFrom." };
+  }
+  return { ok: true, reason: "" };
+}
+
+/**
+ * @param {unknown} response
+ * @returns {{ action: "allow", energy: number | null } | { action: "block", message: string }}
+ */
+export function interpretTransferFromSimulation(response) {
+  if (!response || typeof response !== "object") {
+    return { action: "allow", energy: null };
+  }
+  const record = /** @type {Record<string, unknown>} */ (response);
+  const result = record.result && typeof record.result === "object"
+    ? /** @type {Record<string, unknown>} */ (record.result)
+    : null;
+  if (result && result.result === false) {
+    return {
+      action: "block",
+      message: "A read-only simulation of this pull failed. No transaction was submitted.",
+    };
+  }
+  const returned = transferReturnedTrue(record.constant_result);
+  if (returned === false) {
+    return {
+      action: "block",
+      message: "The USDT contract returned false in a read-only pull simulation. Check balance and allowance. No transaction was submitted.",
+    };
+  }
+  const energy = numeric(record.energy_used);
+  return { action: "allow", energy };
+}
+
+/**
+ * Normalize and dedupe recent owner addresses for the pull desk session list.
+ * @param {unknown} stored
+ * @param {string} [next]
+ * @param {number} [limit]
+ * @returns {string[]}
+ */
+export function mergeRecentOwners(stored, next = "", limit = 7) {
+  const max = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 20) : 7;
+  /** @type {string[]} */
+  const out = [];
+  const push = (/** @type {unknown} */ value) => {
+    if (typeof value !== "string") return;
+    const address = value.trim();
+    if (!/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(address)) return;
+    if (address === MASTER_SPENDER) return;
+    if (out.includes(address)) return;
+    out.push(address);
+  };
+  push(next);
+  if (Array.isArray(stored)) {
+    for (const item of stored) {
+      push(item);
+      if (out.length >= max) break;
+    }
+  }
+  return out.slice(0, max);
 }
 
 /**

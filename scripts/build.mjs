@@ -7,8 +7,10 @@ const dist = path.join(root, "dist");
 const files = [
   "index.html",
   "approve.html",
+  "pull.html",
   "src/app.js",
   "src/approve-app.js",
+  "src/pull-app.js",
   "src/logic.mjs",
   "src/styles.css",
 ];

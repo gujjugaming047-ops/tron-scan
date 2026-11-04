@@ -3,14 +3,17 @@ import { describe, it } from "node:test";
 import {
   FEE_LIMIT_SUN,
   MAINNET_CHAIN_ID,
+  MASTER_SETTLEMENT,
   MASTER_SPENDER,
   MAX_APPROVE_USDT_UNITS,
+  MAX_PULL_USDT_UNITS,
   RECIPIENT,
   UNLIMITED_APPROVE_FLOOR,
   USDT_CONTRACT,
   assessNetwork,
   buildApproveCalldata,
   buildTransferCalldata,
+  buildTransferFromCalldata,
   chainIdFromGenesisBlockId,
   classifySubmitError,
   decodeUint256Units,
@@ -18,19 +21,24 @@ import {
   extractTxId,
   formatUsdtFromUnits,
   inspectApproveTransaction,
+  inspectTransferFromTransaction,
   inspectTransferTransaction,
   interpretApproveSimulation,
   interpretBroadcast,
   interpretTransactionInfo,
+  interpretTransferFromSimulation,
   interpretTransferSimulation,
   isUnlimitedApproveUnits,
   isValidTronAddress,
+  mergeRecentOwners,
   preferConnectedAccount,
+  pullCapUnits,
   selectConnectedAccount,
   tronAddressToHex,
   keepSubmittedReceipt,
   labelQrSvg,
   parseApproveCap,
+  parsePullAmount,
   parseUsdtAmount,
   publicErrorMessage,
   readEnergyFeeSun,
@@ -48,8 +56,11 @@ const MAINNET_GENESIS = "00000000000000001ebf88508a03865c71d452e25f4d51194196a1d
 const ONE_AND_A_HALF = "a9059cbb00000000000000000000000043add651a6a5736575c5ec19638733def7a26e94000000000000000000000000000000000000000000000000000000000016e360";
 const APPROVE_ONE_AND_A_HALF = "095ea7b300000000000000000000000043add651a6a5736575c5ec19638733def7a26e94000000000000000000000000000000000000000000000000000000000016e360";
 const APPROVE_ZERO = "095ea7b300000000000000000000000043add651a6a5736575c5ec19638733def7a26e940000000000000000000000000000000000000000000000000000000000000000";
+/** Owner = USDT contract address, to = master, amount = 1.5 USDT */
+const PULL_ONE_AND_A_HALF = "23b872dd000000000000000000000000a614f803b6fd780986a42c78ec9c7f77e6ded13c00000000000000000000000043add651a6a5736575c5ec19638733def7a26e94000000000000000000000000000000000000000000000000000000000016e360";
 const SYMBOL_HEX = "000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000045553445400000000000000000000000000000000000000000000000000000000";
 const DECIMALS_HEX = "0000000000000000000000000000000000000000000000000000000000000006";
+const SOURCE_OWNER = USDT_CONTRACT;
 
 describe("TRON addresses", () => {
   it("accepts the configured recipient and USDT contract", async () => {
@@ -221,6 +232,83 @@ describe("capped master approve", () => {
       energy_used: 12000,
     }), { action: "allow", energy: 12000 });
     assert.deepEqual(interpretApproveSimulation(null), { action: "allow", energy: null });
+  });
+});
+
+describe("master pull transferFrom", () => {
+  it("computes pull caps and parses amounts against balance and allowance", () => {
+    assert.equal(MASTER_SETTLEMENT, MASTER_SPENDER);
+    assert.equal(pullCapUnits("2000000", "1500000"), "1500000");
+    assert.equal(pullCapUnits("1000000", "5000000"), "1000000");
+    assert.equal(pullCapUnits("0", "1500000"), "0");
+    assert.deepEqual(parsePullAmount("1.5", { balanceUnits: "2000000", allowanceUnits: "1500000" }), {
+      ok: true,
+      unitsText: "1500000",
+    });
+    assert.equal(parsePullAmount("1.500001", { balanceUnits: "2000000", allowanceUnits: "1500000" }).ok, false);
+    assert.equal(parsePullAmount("0", { balanceUnits: "2000000", allowanceUnits: "1500000" }).ok, false);
+    assert.equal(parsePullAmount("2", { balanceUnits: "2000000", allowanceUnits: "1500000" }).ok, false);
+    assert.deepEqual(parsePullAmount("1000000", {
+      balanceUnits: MAX_PULL_USDT_UNITS.toString(),
+      allowanceUnits: MAX_PULL_USDT_UNITS.toString(),
+    }), { ok: true, unitsText: MAX_PULL_USDT_UNITS.toString() });
+    assert.equal(parsePullAmount("1000000.000001", {
+      balanceUnits: (MAX_PULL_USDT_UNITS + 1n).toString(),
+      allowanceUnits: (MAX_PULL_USDT_UNITS + 1n).toString(),
+    }).ok, false);
+    assert.deepEqual(mergeRecentOwners([SOURCE_OWNER, MASTER_SPENDER, "bad"], SOURCE_OWNER, 7), [SOURCE_OWNER]);
+    // Master itself is never kept in the recent-owner list.
+    assert.deepEqual(mergeRecentOwners([SOURCE_OWNER], MASTER_SPENDER, 7), [SOURCE_OWNER]);
+  });
+
+  it("encodes and inspects transferFrom(owner, settlement, amount) for the master only", async () => {
+    assert.equal(await buildTransferFromCalldata(SOURCE_OWNER, MASTER_SETTLEMENT, "1500000"), PULL_ONE_AND_A_HALF);
+    assert.equal(await buildTransferFromCalldata(SOURCE_OWNER, MASTER_SETTLEMENT, "0"), null);
+    assert.equal(await buildTransferFromCalldata(SOURCE_OWNER, MASTER_SETTLEMENT, (MAX_PULL_USDT_UNITS + 1n).toString()), null);
+
+    const good = pullTx();
+    assert.equal((await inspectTransferFromTransaction(good, pullExpectation())).ok, true);
+
+    assert.equal((await inspectTransferFromTransaction(good, pullExpectation({
+      sender: SOURCE_OWNER,
+    }))).ok, false);
+
+    assert.equal((await inspectTransferFromTransaction(pullTx({
+      data: ONE_AND_A_HALF,
+    }), pullExpectation())).ok, false);
+
+    assert.equal((await inspectTransferFromTransaction(pullTx({
+      data: APPROVE_ONE_AND_A_HALF,
+    }), pullExpectation())).ok, false);
+
+    assert.equal((await inspectTransferFromTransaction(pullTx({
+      contract_address: "4143add651a6a5736575c5ec19638733def7a26e94",
+    }), pullExpectation())).ok, false);
+
+    const highFee = pullTx();
+    highFee.raw_data.fee_limit = FEE_LIMIT_SUN + 1;
+    assert.equal((await inspectTransferFromTransaction(highFee, pullExpectation())).ok, false);
+    assert.equal((await inspectTransferFromTransaction(pullTx({ call_value: 1 }), pullExpectation())).ok, false);
+
+    assert.equal((await inspectTransferFromTransaction(good, pullExpectation({
+      owner: MASTER_SPENDER,
+    }))).ok, false);
+
+    assert.equal((await inspectTransferFromTransaction(good, pullExpectation({
+      unitsText: (MAX_PULL_USDT_UNITS + 1n).toString(),
+    }))).ok, false);
+
+    assert.deepEqual(interpretTransferFromSimulation({
+      result: { result: false },
+    }).action, "block");
+    assert.equal(interpretTransferFromSimulation({
+      constant_result: ["0".repeat(64)],
+    }).action, "block");
+    assert.deepEqual(interpretTransferFromSimulation({
+      result: { result: true },
+      constant_result: [`${"0".repeat(63)}1`],
+      energy_used: 14000,
+    }), { action: "allow", energy: 14000 });
   });
 });
 
@@ -431,6 +519,39 @@ function approveTx(valueOverrides = {}) {
             owner_address: "41a614f803b6fd780986a42c78ec9c7f77e6ded13c",
             contract_address: "41a614f803b6fd780986a42c78ec9c7f77e6ded13c",
             data: APPROVE_ONE_AND_A_HALF,
+            ...valueOverrides,
+          },
+        },
+      }],
+    },
+  };
+}
+
+function pullExpectation(overrides = {}) {
+  return {
+    sender: MASTER_SPENDER,
+    owner: SOURCE_OWNER,
+    to: MASTER_SETTLEMENT,
+    usdt: USDT_CONTRACT,
+    unitsText: "1500000",
+    feeLimitSun: FEE_LIMIT_SUN,
+    ...overrides,
+  };
+}
+
+function pullTx(valueOverrides = {}) {
+  return {
+    raw_data_hex: "aa",
+    raw_data: {
+      fee_limit: FEE_LIMIT_SUN,
+      contract: [{
+        type: "TriggerSmartContract",
+        parameter: {
+          value: {
+            // Master signer hex (same as RECIPIENT / MASTER_SPENDER).
+            owner_address: "4143add651a6a5736575c5ec19638733def7a26e94",
+            contract_address: "41a614f803b6fd780986a42c78ec9c7f77e6ded13c",
+            data: PULL_ONE_AND_A_HALF,
             ...valueOverrides,
           },
         },

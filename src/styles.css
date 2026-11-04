@@ -156,6 +156,24 @@ a { color: #9ec1ff; font-weight: 700; overflow-wrap: anywhere; }
   font-weight: 600;
 }
 
+.recent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.recent-list li {
+  margin: 4px 0;
+}
+
+.recent-owner {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.82rem;
+}
+
 :focus-visible {
   outline: 3px solid #8eb6ff;
   outline-offset: 2px;
