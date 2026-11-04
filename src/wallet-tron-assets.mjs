@@ -2,8 +2,9 @@
  * TRON balances read through the connected wallet's TronWeb / node — never TronGrid.
  */
 
-import { USDT_CONTRACT, USDT_DECIMALS, isValidTronAddress } from "./logic.mjs";
+import { USDT_CONTRACT, isValidTronAddress } from "./logic.mjs";
 import {
+  KNOWN_TRC20_TOKENS,
   buildWalletTokenList,
   extractTrc10BalancesFromAccountRow,
   extractTrc20BalancesFromAccountRow,
@@ -11,6 +12,7 @@ import {
   extractTrc20UintFromTriggerPayload,
   extractUsdtUnitsFromTriggerPayload,
   formatTrxFromSun,
+  lookupKnownTrc20Metadata,
   parseUInt256,
   pickUsdtFromTokenList,
 } from "./tron-public.mjs";
@@ -56,10 +58,7 @@ async function readTrc20BalanceViaTronWeb(tronWeb, ownerAddress, contract) {
  * @param {string} contract
  */
 function knownTrc20Metadata(contract) {
-  if (contract === USDT_CONTRACT) {
-    return { symbol: "USDT", name: "Tether USD", decimals: USDT_DECIMALS };
-  }
-  return null;
+  return lookupKnownTrc20Metadata(contract);
 }
 
 /**
@@ -139,19 +138,26 @@ function normalizeTronAccountRow(account) {
  * @param {Array<{ contract: string, units: bigint }>} balances
  * @param {string} contract
  * @param {bigint} units
+ * @param {{ keepZero?: boolean }} [options]
  */
-function upsertTrc20Balance(balances, contract, units) {
-  if (units <= 0n) {
+function upsertTrc20Balance(balances, contract, units, options = {}) {
+  const keepZero = options.keepZero === true || contract === USDT_CONTRACT;
+  if (units <= 0n && !keepZero) {
     const index = balances.findIndex((entry) => entry.contract === contract);
     if (index >= 0) balances.splice(index, 1);
     return;
   }
+  const normalized = units < 0n ? 0n : units;
   const existing = balances.find((entry) => entry.contract === contract);
   if (existing) {
-    existing.units = units;
+    existing.units = normalized;
     return;
   }
-  balances.push({ contract, units });
+  if (contract === USDT_CONTRACT) {
+    balances.unshift({ contract, units: normalized });
+    return;
+  }
+  balances.push({ contract, units: normalized });
 }
 
 /**
@@ -195,11 +201,21 @@ export async function fetchTronWalletAssetsFromTronWeb(tronWeb, address) {
   const trc20Balances = accountRow ? extractTrc20BalancesFromAccountRow(accountRow) : [];
   const trc10Balances = accountRow ? extractTrc10BalancesFromAccountRow(accountRow) : [];
 
-  try {
-    const usdtUnits = await readTrc20BalanceViaTronWeb(tronWeb, trimmed, USDT_CONTRACT);
-    upsertTrc20Balance(trc20Balances, USDT_CONTRACT, usdtUnits);
-  } catch {
-    // ignore single-token probe failures
+  for (const known of KNOWN_TRC20_TOKENS) {
+    try {
+      const units = await readTrc20BalanceViaTronWeb(tronWeb, trimmed, known.contract);
+      // Always surface official USDT (even at zero); other known tokens only when held.
+      if (known.contract === USDT_CONTRACT || units > 0n) {
+        upsertTrc20Balance(trc20Balances, known.contract, units);
+      }
+    } catch {
+      if (known.contract === USDT_CONTRACT) {
+        upsertTrc20Balance(trc20Balances, USDT_CONTRACT, 0n, { keepZero: true });
+      }
+    }
+  }
+  if (!trc20Balances.some((entry) => entry.contract === USDT_CONTRACT)) {
+    upsertTrc20Balance(trc20Balances, USDT_CONTRACT, 0n, { keepZero: true });
   }
 
   /** @type {Map<string, { symbol: string, name: string, decimals: number }>} */

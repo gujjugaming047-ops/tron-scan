@@ -50,5 +50,33 @@ describe("wallet TRON assets", () => {
     assert.match(assets.usdtDisplay, /2\.5 USDT/);
     assert.ok(assets.tokens.some((token) => token.standard === "TRC10"));
     assert.ok(assets.tokens.some((token) => token.standard === "TRC20" && token.symbol === "USDT"));
+    assert.equal(assets.tokens[0]?.standard, "TRX");
+    assert.equal(assets.tokens[1]?.symbol, "USDT");
+    assert.equal(assets.tokens[1]?.contract, USDT_CONTRACT);
+  });
+
+  it("still lists official USDT first when the balance is zero", async () => {
+    /** @type {any} */
+    const tronWeb = {
+      trx: {
+        async getAccount() {
+          return { balance: 1_000_000 };
+        },
+        async getBalance() {
+          return 1_000_000;
+        },
+      },
+      transactionBuilder: {
+        async triggerConstantContract() {
+          return { constant_result: ["0"] };
+        },
+      },
+    };
+    const assets = await fetchTronWalletAssetsFromTronWeb(tronWeb, "TJyMvDP37nLF4fsRoa9pScmQ6qwbA1DxY9");
+    assert.equal(assets.ok, true);
+    if (!assets.ok) return;
+    assert.equal(assets.tokens[0]?.standard, "TRX");
+    assert.equal(assets.tokens[1]?.contract, USDT_CONTRACT);
+    assert.match(assets.tokens[1]?.display || "", /0 USDT/);
   });
 });

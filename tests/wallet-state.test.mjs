@@ -1,15 +1,19 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  TRUST_WALLET_TRON_COIN_ID,
   evaluateSessionRestore,
   firstEvmAddress,
   identifyEvmProvider,
   normalizeEvmChainId,
+  rejectEvmOnlyWalletConnectMessage,
+  requireGenuineTronSessionAddress,
   resolveSignInNetwork,
   sameWalletAddress,
   selectWalletProvider,
   shortenWalletAddress,
   tronAddressFromWalletConnectSession,
+  walletConnectSessionIsEvmOnly,
   walletHelpLink,
 } from "../src/wallet-state.mjs";
 
@@ -74,7 +78,10 @@ describe("wallet session state", () => {
     };
     assert.equal(walletHelpLink("metamask", { ...page, mobile: false })?.label, "Get MetaMask");
     assert.equal(walletHelpLink("metamask", { ...page, mobile: true })?.href, "https://metamask.app.link/dapp/check.example/path");
-    assert.match(walletHelpLink("trust", { ...page, mobile: true })?.href || "", /^https:\/\/link\.trustwallet\.com\/open_url/);
+    const trustMobile = walletHelpLink("trust", { ...page, mobile: true })?.href || "";
+    assert.match(trustMobile, /^https:\/\/link\.trustwallet\.com\/open_url/);
+    assert.match(trustMobile, new RegExp(`coin_id=${TRUST_WALLET_TRON_COIN_ID}`));
+    assert.equal(trustMobile.includes("coin_id=60"), false);
     assert.equal(walletHelpLink("tronlink", { ...page, mobile: true })?.href, "https://www.tronlink.org/");
   });
 
@@ -89,6 +96,23 @@ describe("wallet session state", () => {
     assert.equal(tronAddressFromWalletConnectSession({
       namespaces: { tron: { accounts: ["tron:0x2b6653dc:invalid"] } },
     }), "");
+  });
+
+  it("rejects EVM-only WalletConnect sessions and requires a genuine T… TRON address", () => {
+    assert.equal(walletConnectSessionIsEvmOnly({
+      namespaces: { eip155: { accounts: ["eip155:1:0x1111111111111111111111111111111111111111"] } },
+    }), true);
+    assert.equal(walletConnectSessionIsEvmOnly({
+      namespaces: {
+        eip155: { accounts: ["eip155:1:0x1111111111111111111111111111111111111111"] },
+        tron: { accounts: ["tron:0x2b6653dc:TG94XL9N1uVHPM4U4zcpYGc6w1i7nUBuiq"] },
+      },
+    }), false);
+    assert.match(rejectEvmOnlyWalletConnectMessage(), /EVM-only/i);
+    assert.match(rejectEvmOnlyWalletConnectMessage(), /TronLink|Trust Wallet/);
+    assert.equal(requireGenuineTronSessionAddress("TG94XL9N1uVHPM4U4zcpYGc6w1i7nUBuiq", "tron").ok, true);
+    assert.equal(requireGenuineTronSessionAddress("0x1111111111111111111111111111111111111111", "tron").ok, false);
+    assert.equal(requireGenuineTronSessionAddress("TG94XL9N1uVHPM4U4zcpYGc6w1i7nUBuiq", "evm").ok, false);
   });
 });
 

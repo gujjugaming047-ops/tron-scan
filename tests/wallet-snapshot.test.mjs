@@ -19,7 +19,7 @@ describe("wallet snapshot recovery", () => {
     ]);
   });
 
-  it("normalizes a successful read-only TRON balance fallback for publication", () => {
+  it("normalizes a successful verified-WC TRON mainnet read for publication", () => {
     const result = publicTronSnapshotAssets({
       ok: true,
       body: {
@@ -31,11 +31,11 @@ describe("wallet snapshot recovery", () => {
       },
     });
     assert.equal(result.ok, true);
-    assert.equal(result.source, "public-tron-mainnet");
+    assert.equal(result.source, "verified-wc-tron-mainnet-read");
     assert.equal(result.usdtDisplay, "2 USDT");
   });
 
-  it("fails with an actionable error when the fallback cannot load", () => {
+  it("fails with an actionable error when the verified-session mainnet read cannot load", () => {
     const result = publicTronSnapshotAssets({
       ok: false,
       body: { error: "Public TRON account data is unavailable." },

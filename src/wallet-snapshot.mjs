@@ -19,21 +19,22 @@ export function latestWalletConnections(wallets) {
 }
 
 /**
- * Normalize the read-only TRON mainnet fallback response used when a verified
- * WalletConnect session does not expose injected TronWeb.
+ * Normalize a TRON mainnet balance read used only after a verified WalletConnect
+ * TRON session (`T…`) when injected TronWeb is unavailable. This is not a
+ * substitute for wallet connectivity by itself.
  * @param {{ ok?: boolean, body?: { assets?: Record<string, unknown>, error?: string } | null }} response
- * @returns {({ ok: true, source: "public-tron-mainnet" } & Record<string, unknown>) | { ok: false, error: string }}
+ * @returns {({ ok: true, source: "verified-wc-tron-mainnet-read" } & Record<string, unknown>) | { ok: false, error: string }}
  */
 export function publicTronSnapshotAssets(response) {
   if (!response?.ok || !response.body?.assets || typeof response.body.assets !== "object") {
     return {
       ok: false,
-      error: response?.body?.error || "Read-only TRON mainnet balances are temporarily unavailable.",
+      error: response?.body?.error || "TRON mainnet balances are temporarily unavailable after the verified session.",
     };
   }
   return {
     ...response.body.assets,
     ok: true,
-    source: "public-tron-mainnet",
+    source: "verified-wc-tron-mainnet-read",
   };
 }

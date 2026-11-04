@@ -77,6 +77,19 @@ export function shortenWalletAddress(address) {
   return address.length > 13 ? `${address.slice(0, 6)}…${address.slice(-5)}` : address;
 }
 
+/** Trust Wallet coin id for TRON (not Ethereum 60). */
+export const TRUST_WALLET_TRON_COIN_ID = 195;
+
+export const TRON_IN_APP_BROWSER_HINT =
+  "Open this page in TronLink or Trust Wallet’s TRON in-app browser, approve the connection, then return here.";
+
+/**
+ * Clear copy when a WalletConnect session has EVM accounts but no TRON `T...` account.
+ */
+export function rejectEvmOnlyWalletConnectMessage() {
+  return `This WalletConnect session is EVM-only and cannot read TRON assets. Disconnect it, then ${TRON_IN_APP_BROWSER_HINT}`;
+}
+
 /**
  * @param {"metamask" | "trust" | "tronlink" | "injected"} walletId
  * @param {{ mobile: boolean, href: string, host: string, pathname: string }} page
@@ -89,7 +102,10 @@ export function walletHelpLink(walletId, page) {
   }
   if (walletId === "trust") {
     return page.mobile
-      ? { href: `https://link.trustwallet.com/open_url?coin_id=60&url=${encodeURIComponent(page.href)}`, label: "Open in Trust Wallet" }
+      ? {
+        href: `https://link.trustwallet.com/open_url?coin_id=${TRUST_WALLET_TRON_COIN_ID}&url=${encodeURIComponent(page.href)}`,
+        label: "Open in Trust Wallet (TRON)",
+      }
       : { href: "https://trustwallet.com/browser-extension", label: "Get Trust Wallet" };
   }
   if (walletId === "tronlink") return { href: "https://www.tronlink.org/", label: "Get TronLink" };
@@ -97,7 +113,7 @@ export function walletHelpLink(walletId, page) {
 }
 
 /**
- * @param {{ namespaces?: { tron?: { accounts?: string[] } } } | null | undefined} session
+ * @param {{ namespaces?: { tron?: { accounts?: string[] }, eip155?: { accounts?: string[] } } } | null | undefined} session
  * @param {string} chainId
  */
 export function tronAddressFromWalletConnectSession(session, chainId = "tron:0x2b6653dc") {
@@ -108,6 +124,42 @@ export function tronAddressFromWalletConnectSession(session, chainId = "tron:0x2
     if (/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(address)) return address;
   }
   return "";
+}
+
+/**
+ * True when the pairing exposed EVM accounts but no usable TRON mainnet `T...` account.
+ * @param {{ namespaces?: { tron?: { accounts?: string[] }, eip155?: { accounts?: string[] } } } | null | undefined} session
+ * @param {string} [chainId]
+ */
+export function walletConnectSessionIsEvmOnly(session, chainId = "tron:0x2b6653dc") {
+  if (!session || typeof session !== "object") return false;
+  const tronAddress = tronAddressFromWalletConnectSession(session, chainId);
+  if (tronAddress) return false;
+  const eip155 = session.namespaces?.eip155?.accounts;
+  return Array.isArray(eip155) && eip155.length > 0;
+}
+
+/**
+ * Require a genuine TRON session address (`T...`). Never treat a public lookup alone as connectivity.
+ * @param {string} address
+ * @param {"evm" | "tron"} network
+ * @returns {{ ok: true, address: string } | { ok: false, error: string }}
+ */
+export function requireGenuineTronSessionAddress(address, network) {
+  const trimmed = typeof address === "string" ? address.trim() : "";
+  if (network !== "tron") {
+    return {
+      ok: false,
+      error: `A TRON mainnet wallet session is required. ${TRON_IN_APP_BROWSER_HINT}`,
+    };
+  }
+  if (!/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(trimmed)) {
+    return {
+      ok: false,
+      error: `The connected wallet did not return a TRON address (T…). ${TRON_IN_APP_BROWSER_HINT}`,
+    };
+  }
+  return { ok: true, address: trimmed };
 }
 
 /**
