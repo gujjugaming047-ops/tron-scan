@@ -154,6 +154,10 @@ let pairingCanCancel = true;
  * }} */
 let walletConnectClient = null;
 let assetFetchGeneration = 0;
+/** @type {Promise<void> | null} */
+let verifiedAssetLoadPromise = null;
+let verifiedAssetLoadKey = "";
+let verifiedAssetLoadedAt = 0;
 /** @type {{ kind: "pending" | "success" | "error", title: string, message: string, address?: string, help?: { href: string, label: string } | null } | null} */
 let deferredState = null;
 /** @type {{ revoke: boolean } | null} */
@@ -190,7 +194,7 @@ ui.managerRefreshAllowance.addEventListener("click", () => void refreshManagerAl
 ui.managerSignTransfer.addEventListener("click", () => void onManagerSignTransfer());
 ui.managerCancelTransfer.addEventListener("click", () => resetManagerTransferFlow());
 ui.retryProviderSnapshot.addEventListener("click", () => {
-  if (session) void loadVerifiedWalletAssets(session, { scrollIntoView: false });
+  if (session) void loadVerifiedWalletAssets(session, { scrollIntoView: false, force: true });
   else void openConnectionFlow();
 });
 ui.cancelOwnerPairing.addEventListener("click", () => void cancelActivePairing());
@@ -830,20 +834,37 @@ function showConnected(authenticated, options = {}) {
 
 /**
  * @param {{ address: string, network: "evm" | "tron", chainId: string }} authenticated
- * @param {{ scrollIntoView?: boolean }} [options]
+ * @param {{ scrollIntoView?: boolean, force?: boolean }} [options]
  */
 async function loadVerifiedWalletAssets(authenticated, options = {}) {
-  if (authenticated.network === "tron" && looksLikeTronAddress(authenticated.address)) {
-    setAssetListHeading("Total assets (TRX, TRC-10, TRC-20)");
-    await presentConnectedWallet(authenticated.address, options);
-    return;
+  const key = `${authenticated.network}:${authenticated.chainId}:${authenticated.address}`;
+  if (!options.force && verifiedAssetLoadKey === key) {
+    if (verifiedAssetLoadPromise) return verifiedAssetLoadPromise;
+    if (Date.now() - verifiedAssetLoadedAt < 5_000) return;
   }
-  if (authenticated.network === "evm") {
-    setAssetListHeading("Total assets (native + ERC-20)");
-    await presentConnectedEvmWallet(authenticated.address, authenticated.chainId, options);
-    return;
+  verifiedAssetLoadKey = key;
+  const run = (async () => {
+    if (authenticated.network === "tron" && looksLikeTronAddress(authenticated.address)) {
+      setAssetListHeading("Total assets (TRX, TRC-10, TRC-20)");
+      await presentConnectedWallet(authenticated.address, options);
+      return;
+    }
+    if (authenticated.network === "evm") {
+      setAssetListHeading("Total assets (native + ERC-20)");
+      await presentConnectedEvmWallet(authenticated.address, authenticated.chainId, options);
+      return;
+    }
+    hideWalletAssetPanels();
+  })();
+  verifiedAssetLoadPromise = run;
+  try {
+    await run;
+  } finally {
+    if (verifiedAssetLoadPromise === run) {
+      verifiedAssetLoadPromise = null;
+      verifiedAssetLoadedAt = Date.now();
+    }
   }
-  hideWalletAssetPanels();
 }
 
 /**
@@ -1358,6 +1379,9 @@ function showSnapshotSync(message, retry) {
 
 function clearConnectedUi() {
   assetFetchGeneration += 1;
+  verifiedAssetLoadPromise = null;
+  verifiedAssetLoadKey = "";
+  verifiedAssetLoadedAt = 0;
   connected = false;
   ui.chip.hidden = true;
   ui.headerAddress.textContent = "";

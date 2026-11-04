@@ -52,6 +52,8 @@ describe("source safety", () => {
     const evmPublic = readFileSync(path.join(root, "src/evm-public.mjs"), "utf8");
     assert.match(evmPublic, /fetchBlockscoutErc20Balances/);
     assert.match(landing, /publishProviderSnapshot/);
+    assert.match(landing, /verifiedAssetLoadPromise/);
+    assert.match(landing, /force: true/);
     assert.match(landing, /fetchTronRecentTransactionsFromTronWeb/);
     assert.match(landing, /fetchEvmRecentTransactionsFromProvider/);
     assert.match(html, /linked-transaction-list/);
