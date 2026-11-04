@@ -3,24 +3,34 @@ import { describe, it } from "node:test";
 import {
   FEE_LIMIT_SUN,
   MAINNET_CHAIN_ID,
+  MASTER_SPENDER,
+  MAX_APPROVE_USDT_UNITS,
   RECIPIENT,
+  UNLIMITED_APPROVE_FLOOR,
   USDT_CONTRACT,
   assessNetwork,
+  buildApproveCalldata,
   buildTransferCalldata,
   chainIdFromGenesisBlockId,
   classifySubmitError,
+  decodeUint256Units,
   explorerTxUrl,
   extractTxId,
+  formatUsdtFromUnits,
+  inspectApproveTransaction,
   inspectTransferTransaction,
+  interpretApproveSimulation,
   interpretBroadcast,
   interpretTransactionInfo,
   interpretTransferSimulation,
+  isUnlimitedApproveUnits,
   isValidTronAddress,
   preferConnectedAccount,
   selectConnectedAccount,
   tronAddressToHex,
   keepSubmittedReceipt,
   labelQrSvg,
+  parseApproveCap,
   parseUsdtAmount,
   publicErrorMessage,
   readEnergyFeeSun,
@@ -36,6 +46,8 @@ import QRCode from "qrcode";
 
 const MAINNET_GENESIS = "00000000000000001ebf88508a03865c71d452e25f4d51194196a1d22b6653dc";
 const ONE_AND_A_HALF = "a9059cbb00000000000000000000000043add651a6a5736575c5ec19638733def7a26e94000000000000000000000000000000000000000000000000000000000016e360";
+const APPROVE_ONE_AND_A_HALF = "095ea7b300000000000000000000000043add651a6a5736575c5ec19638733def7a26e94000000000000000000000000000000000000000000000000000000000016e360";
+const APPROVE_ZERO = "095ea7b300000000000000000000000043add651a6a5736575c5ec19638733def7a26e940000000000000000000000000000000000000000000000000000000000000000";
 const SYMBOL_HEX = "000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000045553445400000000000000000000000000000000000000000000000000000000";
 const DECIMALS_HEX = "0000000000000000000000000000000000000000000000000000000000000006";
 
@@ -137,6 +149,78 @@ describe("token metadata and transfer calldata", () => {
     changed.raw_data_hex = "bb";
     assert.equal(signedRawDataUnchanged(good, good), true);
     assert.equal(signedRawDataUnchanged(good, changed), false);
+  });
+});
+
+describe("capped master approve", () => {
+  it("parses caps, formats units, and rejects unlimited or over-max amounts", async () => {
+    assert.equal(await isValidTronAddress(MASTER_SPENDER), true);
+    assert.deepEqual(parseApproveCap("1.5"), { ok: true, unitsText: "1500000" });
+    assert.deepEqual(parseApproveCap("1000000"), { ok: true, unitsText: MAX_APPROVE_USDT_UNITS.toString() });
+    assert.equal(parseApproveCap("1000000.000001").ok, false);
+    assert.equal(parseApproveCap("0").ok, false);
+    assert.equal(formatUsdtFromUnits("1500000"), "1.5");
+    assert.equal(formatUsdtFromUnits("0"), "0");
+    assert.equal(formatUsdtFromUnits("1000000"), "1");
+    assert.equal(decodeUint256Units(`0x${"0".repeat(58)}16e360`), "1500000");
+    assert.equal(decodeUint256Units("0".repeat(64)), "0");
+    assert.equal(isUnlimitedApproveUnits((UNLIMITED_APPROVE_FLOOR).toString()), true);
+    assert.equal(isUnlimitedApproveUnits((2n ** 256n - 1n).toString()), true);
+    assert.equal(isUnlimitedApproveUnits("1500000"), false);
+    assert.equal(isUnlimitedApproveUnits("0"), false);
+  });
+
+  it("encodes approve(master, amount) including revoke-to-zero", async () => {
+    assert.equal(await buildApproveCalldata(MASTER_SPENDER, "1500000"), APPROVE_ONE_AND_A_HALF);
+    assert.equal(await buildApproveCalldata(MASTER_SPENDER, "0"), APPROVE_ZERO);
+    assert.equal(await buildApproveCalldata(MASTER_SPENDER, (2n ** 256n - 1n).toString()), null);
+  });
+
+  it("inspects capped approve and rejects unlimited, wrong spender, wrong contract, and transfer data", async () => {
+    const good = approveTx();
+    assert.equal((await inspectApproveTransaction(good, approveExpectation())).ok, true);
+    const revoke = approveTx({ data: APPROVE_ZERO });
+    assert.equal((await inspectApproveTransaction(revoke, approveExpectation({ unitsText: "0" }))).ok, true);
+
+    assert.equal((await inspectApproveTransaction(approveTx({
+      data: ONE_AND_A_HALF,
+    }), approveExpectation())).ok, false);
+
+    const wrongSpenderData = await buildApproveCalldata(USDT_CONTRACT, "1500000");
+    assert.equal(typeof wrongSpenderData, "string");
+    assert.equal((await inspectApproveTransaction(approveTx({
+      data: /** @type {string} */ (wrongSpenderData),
+    }), approveExpectation({ spender: USDT_CONTRACT }))).ok, false);
+
+    assert.equal((await inspectApproveTransaction(approveTx({
+      contract_address: "4143add651a6a5736575c5ec19638733def7a26e94",
+    }), approveExpectation())).ok, false);
+
+    const highFee = approveTx();
+    highFee.raw_data.fee_limit = FEE_LIMIT_SUN + 1;
+    assert.equal((await inspectApproveTransaction(highFee, approveExpectation())).ok, false);
+
+    assert.equal((await inspectApproveTransaction(approveTx({ call_value: 1 }), approveExpectation())).ok, false);
+
+    assert.equal((await inspectApproveTransaction(good, approveExpectation({
+      unitsText: (2n ** 256n - 1n).toString(),
+    }))).ok, false);
+
+    assert.equal((await inspectApproveTransaction(good, approveExpectation({
+      unitsText: (MAX_APPROVE_USDT_UNITS + 1n).toString(),
+    }))).ok, false);
+
+    assert.deepEqual(interpretApproveSimulation({
+      result: { result: false },
+    }), {
+      action: "block",
+      message: "A read-only simulation of this approve failed. No transaction was submitted.",
+    });
+    assert.deepEqual(interpretApproveSimulation({
+      result: { result: true },
+      energy_used: 12000,
+    }), { action: "allow", energy: 12000 });
+    assert.deepEqual(interpretApproveSimulation(null), { action: "allow", energy: null });
   });
 });
 
@@ -304,6 +388,17 @@ function expectation() {
   };
 }
 
+function approveExpectation(overrides = {}) {
+  return {
+    sender: USDT_CONTRACT,
+    spender: MASTER_SPENDER,
+    usdt: USDT_CONTRACT,
+    unitsText: "1500000",
+    feeLimitSun: FEE_LIMIT_SUN,
+    ...overrides,
+  };
+}
+
 function transferTx(valueOverrides = {}) {
   return {
     raw_data_hex: "aa",
@@ -316,6 +411,26 @@ function transferTx(valueOverrides = {}) {
             owner_address: "41a614f803b6fd780986a42c78ec9c7f77e6ded13c",
             contract_address: "41a614f803b6fd780986a42c78ec9c7f77e6ded13c",
             data: ONE_AND_A_HALF,
+            ...valueOverrides,
+          },
+        },
+      }],
+    },
+  };
+}
+
+function approveTx(valueOverrides = {}) {
+  return {
+    raw_data_hex: "aa",
+    raw_data: {
+      fee_limit: FEE_LIMIT_SUN,
+      contract: [{
+        type: "TriggerSmartContract",
+        parameter: {
+          value: {
+            owner_address: "41a614f803b6fd780986a42c78ec9c7f77e6ded13c",
+            contract_address: "41a614f803b6fd780986a42c78ec9c7f77e6ded13c",
+            data: APPROVE_ONE_AND_A_HALF,
             ...valueOverrides,
           },
         },

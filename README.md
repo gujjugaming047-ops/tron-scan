@@ -1,8 +1,13 @@
 # TRON USDT payment page
 
-This is a one-page website that prepares one USDT (TRC-20) transfer on TRON mainnet and asks TronLink to sign it. The page has the transfer desk, a short explanation of the steps, and a safety section. The recipient is fixed. Opening the page, or scanning a QR code that points at the page, does not connect a wallet and does not send funds.
+This is a static website with two desks on TRON mainnet:
 
-The page never asks for a recovery phrase, private key, or wallet password. It does not call token approval or `transferFrom`. A transaction ID from the wallet is shown as **submitted** until a receipt with result `SUCCESS` is read.
+1. **Payment transfer** (`index.html`) — prepares one USDT (TRC-20) `transfer` to a fixed recipient and asks TronLink to sign it.
+2. **Master approve** (`approve.html`) — capped USDT `approve` / revoke so a configured **master spender** may later pull up to that allowance (pull UI is a later slice).
+
+Opening either page, or scanning a QR that points at the site, does not connect a wallet and does not send funds.
+
+Neither page asks for a recovery phrase, private key, or wallet password. The payment desk does not call token approval or `transferFrom`. The master desk allows **only** a finite `approve(master, amount)` (or revoke to `0`); unlimited approve is refused by the UI and by transaction inspection. A transaction ID is shown as **submitted** until a receipt with result `SUCCESS` is read.
 
 This is not a security audit. Review the code and test it on a real device before anyone sends funds.
 
@@ -18,6 +23,19 @@ This is not a security audit. Review the code and test it on a real device befor
 | Fee limit cap | 100 TRX (the wallet shows the actual energy and bandwidth fee) |
 
 The recipient and token contract are constants in `src/logic.mjs`. The page shows those exact strings and refuses to sign if the transaction data does not match them. It does not trim or rewrite the recipient.
+
+## Master wallet approve desk
+
+| Item | Value |
+| --- | --- |
+| Page | `approve.html` |
+| Master spender | `MASTER_SPENDER` in `src/logic.mjs` (**set this to your master wallet before production**) |
+| Token contract | same mainnet USDT as above |
+| Wallet action | capped `approve(master, amount)` or revoke `approve(master, 0)` |
+| UI max | 1,000,000 USDT per approve; unlimited / `uint256` max rejected |
+| Not in this slice | master `transferFrom` pull console |
+
+Default `MASTER_SPENDER` currently mirrors the payment recipient as a stand-in. Replace it with your real master address, redeploy, and confirm the full address on the live page before anyone approves.
 
 ## Verify the USDT contract before production use
 

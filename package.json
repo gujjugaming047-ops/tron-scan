@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Static TRON mainnet page that asks TronLink to sign one USDT transfer to a fixed recipient.",
+  "description": "Static TRON mainnet pages: USDT transfer to a fixed recipient, plus a capped master-wallet approve desk.",
   "engines": {
     "node": ">=20"
   },
