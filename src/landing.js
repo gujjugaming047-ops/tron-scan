@@ -323,7 +323,8 @@ function discoverProviders() {
       addProvider({ id: "tronlink", network: "tron", name: "TronLink", provider: tronLink });
     }
   }
-  updateTrustNetworkHint();
+  // Do NOT call updateTrustNetworkHint/updateMobileTronGuide here — that re-enters
+  // discoverProviders and overflows the stack while flooding /api/config.
 }
 
 /**
@@ -368,7 +369,8 @@ function renderProviderOptions() {
   const injected = selectProvider("injected");
   ui.injected.hidden = !injected;
   if (injected) ui.injectedName.textContent = injected.name;
-  updateTrustNetworkHint();
+  // Guide refresh is owned by showOptions / explicit callers — not here — to
+  // avoid discoverProviders → renderProviderOptions → guide → discover loops.
 }
 
 /**
@@ -466,73 +468,82 @@ async function ensureWalletConnectConfigured() {
   return walletConnectConfigured;
 }
 
+/** Prevent re-entrant guide updates (discover ↔ guide caused stack overflows). */
+let mobileTronGuideBusy = false;
+
 /**
  * Mobile guide: TronLink primary only; WalletConnect TRON secondary.
  * Trust is never the default open path and never auto-navigated.
  */
 async function updateMobileTronGuide() {
+  if (mobileTronGuideBusy) return;
+  mobileTronGuideBusy = true;
   const hint = document.getElementById("trust-tron-network-hint");
-  discoverProviders();
-  const context = detectMobileWalletHostContext(window);
-  const wcReady = await ensureWalletConnectConfigured();
-  const failed = trustDeepLinkFailed() || context === "trust-evm";
+  try {
+    // Read host context only — do not call discoverProviders (it must stay acyclic).
+    const context = detectMobileWalletHostContext(window);
+    const wcReady = await ensureWalletConnectConfigured();
+    const failed = trustDeepLinkFailed() || context === "trust-evm";
 
-  const plan = recommendedMobileTronAction(context, {
-    trustDeepLinkFailed: failed,
-    walletConnectConfigured: wcReady,
-  });
+    const plan = recommendedMobileTronAction(context, {
+      trustDeepLinkFailed: failed,
+      walletConnectConfigured: wcReady,
+    });
 
-  syncTrustTronDeepLinkControls();
+    syncTrustTronDeepLinkControls();
 
-  // Never surface Trust deep-link controls as a CTA.
-  ui.trustTronSecondaryCta.hidden = true;
-  ui.trustTronSecondaryCta.setAttribute("hidden", "");
-  ui.trustTronLinkLabel.hidden = true;
-  ui.trustTronLinkLabel.setAttribute("hidden", "");
-  ui.trustTronLinkRow.hidden = true;
-  ui.trustTronLinkRow.setAttribute("hidden", "");
+    // Never surface Trust deep-link controls as a CTA.
+    ui.trustTronSecondaryCta.hidden = true;
+    ui.trustTronSecondaryCta.setAttribute("hidden", "");
+    ui.trustTronLinkLabel.hidden = true;
+    ui.trustTronLinkLabel.setAttribute("hidden", "");
+    ui.trustTronLinkRow.hidden = true;
+    ui.trustTronLinkRow.setAttribute("hidden", "");
 
-  if (plan.primary === "none" && !isMobile() && context === "desktop") {
-    hideTrustTronReopenPanel();
+    if (plan.primary === "none" && !isMobile() && context === "desktop") {
+      hideTrustTronReopenPanel();
+      if (hint) {
+        hint.hidden = true;
+        hint.setAttribute("hidden", "");
+      }
+      return;
+    }
+
+    ui.mobileTronGuideKicker.textContent = plan.blockTrust || failed
+      ? "Trust EVM blocked · TronLink / WC only"
+      : "Mobile · TronLink only";
+    ui.trustTronReopenCopy.textContent = plan.message;
+
+    // Secondary CTA is always WalletConnect TRON when configured.
+    ui.trustTronWcCta.hidden = !wcReady;
+    if (!ui.trustTronWcCta.hidden) ui.trustTronWcCta.removeAttribute("hidden");
+    else ui.trustTronWcCta.setAttribute("hidden", "");
+
+    /** @type {HTMLAnchorElement} */
+    const primary = ui.trustTronReopenCta;
+    if (plan.primary === "connect-tronlink") {
+      ui.trustTronReopenTitle.textContent = "Connect TronLink";
+      primary.textContent = "Connect TronLink";
+      primary.dataset.action = "connect-tronlink";
+      primary.href = "#";
+    } else {
+      // open-tronlink — the only default primary path
+      ui.trustTronReopenTitle.textContent = "Open in TronLink";
+      primary.textContent = "Open in TronLink";
+      primary.dataset.action = "open-tronlink";
+      const deep = tronLinkOpenDappUrl(window.location.href);
+      primary.href = deep || "https://www.tronlink.org/";
+      primary.target = deep ? "_self" : "_blank";
+      primary.rel = "noopener noreferrer";
+    }
+
+    showTrustTronReopenPanel(plan.message);
     if (hint) {
       hint.hidden = true;
       hint.setAttribute("hidden", "");
     }
-    return;
-  }
-
-  ui.mobileTronGuideKicker.textContent = plan.blockTrust || failed
-    ? "Trust EVM blocked · TronLink / WC only"
-    : "Mobile · TronLink only";
-  ui.trustTronReopenCopy.textContent = plan.message;
-
-  // Secondary CTA is always WalletConnect TRON when configured.
-  ui.trustTronWcCta.hidden = !wcReady;
-  if (!ui.trustTronWcCta.hidden) ui.trustTronWcCta.removeAttribute("hidden");
-  else ui.trustTronWcCta.setAttribute("hidden", "");
-
-  /** @type {HTMLAnchorElement} */
-  const primary = ui.trustTronReopenCta;
-  if (plan.primary === "connect-tronlink") {
-    ui.trustTronReopenTitle.textContent = "Connect TronLink";
-    primary.textContent = "Connect TronLink";
-    primary.dataset.action = "connect-tronlink";
-    primary.href = "#";
-  } else {
-    // open-tronlink — the only default primary path
-    ui.trustTronReopenTitle.textContent = "Open in TronLink";
-    primary.textContent = "Open in TronLink";
-    primary.dataset.action = "open-tronlink";
-    const deep = tronLinkOpenDappUrl(window.location.href);
-    primary.href = deep || "https://www.tronlink.org/";
-    primary.target = deep ? "_self" : "_blank";
-    primary.rel = "noopener noreferrer";
-  }
-
-  showTrustTronReopenPanel(plan.message);
-  if (hint) {
-    hint.hidden = true;
-    hint.setAttribute("hidden", "");
+  } finally {
+    mobileTronGuideBusy = false;
   }
 }
 

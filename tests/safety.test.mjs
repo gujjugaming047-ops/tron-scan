@@ -103,7 +103,18 @@ describe("source safety", () => {
     assert.match(landing, /markTrustDeepLinkFailed/);
     assert.match(landing, /Trust EVM blocked|Trust connect is blocked/);
     assert.match(landing, /never Trust deep-link as default|Never surface Trust deep-link/);
+    assert.match(landing, /mobileTronGuideBusy/);
+    assert.match(landing, /must stay acyclic|Do NOT call updateTrustNetworkHint/);
     assert.equal(/openTrustTronDeepLink\(\{\s*navigate:\s*true/.test(landing), false);
+    // discoverProviders must not call the guide (infinite recursion /api/config flood).
+    const discoverStart = landing.indexOf("function discoverProviders()");
+    const discoverEnd = landing.indexOf("\nfunction describeEvmProvider", discoverStart);
+    const discoverBody = discoverStart >= 0 && discoverEnd > discoverStart
+      ? landing.slice(discoverStart, discoverEnd)
+      : "";
+    assert.match(discoverBody, /function discoverProviders/);
+    assert.equal(discoverBody.includes("updateTrustNetworkHint("), false);
+    assert.equal(discoverBody.includes("updateMobileTronGuide("), false);
     const evmPublic = readFileSync(path.join(root, "src/evm-public.mjs"), "utf8");
     assert.match(evmPublic, /fetchBlockscoutErc20Balances/);
     assert.match(landing, /publishProviderSnapshot/);
