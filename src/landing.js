@@ -16,6 +16,7 @@ import {
   trustWalletOpenOnEvmOnly,
   trustWalletSwitchToTronMessage,
   trustWalletTronDeepLink,
+  verifyTrustTronDeepLink,
   waitForTronWeb,
   walletHelpLink,
 } from "./wallet-state.mjs";
@@ -23,6 +24,7 @@ import {
   CONNECTION_TARGET,
   looksLikeTronAddress,
   assessNetwork,
+  tronLinkOpenDappUrl,
 } from "./logic.mjs";
 import {
   MAX_ALLOWANCE_USDT,
@@ -135,6 +137,9 @@ const ui = {
   trustTronReopen: requiredElement("trust-tron-reopen"),
   trustTronReopenCopy: requiredElement("trust-tron-reopen-copy"),
   trustTronReopenCta: requiredAnchor("trust-tron-reopen-cta"),
+  trustTronLinkInput: requiredInput("trust-tron-link-input"),
+  trustTronCopy: requiredButton("trust-tron-copy"),
+  trustTronTronlinkFallback: requiredAnchor("trust-tron-tronlink-fallback"),
   trustSubtitle: requiredElement("connect-trust-subtitle"),
 };
 
@@ -198,9 +203,17 @@ ui.tronLink.addEventListener("click", () => void connectSelected("tronlink"));
 ui.trust.addEventListener("click", () => void connectSelected("trust"));
 ui.injected.addEventListener("click", () => void connectSelected("injected"));
 ui.walletConnect.addEventListener("click", () => void connectWalletConnect());
-ui.trustTronReopenCta.addEventListener("click", (event) => {
+ui.trustTronReopenCta.addEventListener("click", () => {
+  // Keep href as https://link.trustwallet.com/...coin_id=195 (native navigation).
+  // Also sync encoding before the browser follows the link.
+  syncTrustTronDeepLinkControls();
+});
+ui.trustTronCopy.addEventListener("click", () => void copyTrustTronDeepLink());
+ui.trustTronTronlinkFallback.addEventListener("click", (event) => {
+  const href = tronLinkOpenDappUrl(window.location.href);
+  if (!href) return;
   event.preventDefault();
-  openTrustTronDeepLink({ navigate: true });
+  window.location.assign(href);
 });
 ui.close.addEventListener("click", () => closeWalletPanel());
 ui.retry.addEventListener("click", showOptions);
@@ -331,7 +344,23 @@ function selectProvider(id) {
 }
 
 function currentTrustTronDeepLink() {
-  return trustWalletTronDeepLink(window.location.href);
+  const href = trustWalletTronDeepLink(window.location.href);
+  const verified = verifyTrustTronDeepLink(href);
+  if (!verified.ok) {
+    console.warn("Trust TRON deep link failed verification:", verified.error);
+  }
+  return href;
+}
+
+function syncTrustTronDeepLinkControls() {
+  const href = currentTrustTronDeepLink();
+  ui.trustTronReopenCta.href = href;
+  ui.trustTronReopenCta.target = "_blank";
+  ui.trustTronReopenCta.rel = "noopener noreferrer";
+  ui.trustTronLinkInput.value = href;
+  const tronLink = tronLinkOpenDappUrl(window.location.href);
+  ui.trustTronTronlinkFallback.href = tronLink || "https://www.tronlink.org/";
+  return href;
 }
 
 /**
@@ -339,10 +368,10 @@ function currentTrustTronDeepLink() {
  * @param {{ navigate?: boolean, reason?: string }} [options]
  */
 function openTrustTronDeepLink(options = {}) {
-  const href = currentTrustTronDeepLink();
-  ui.trustTronReopenCta.href = href;
+  const href = syncTrustTronDeepLinkControls();
   showTrustTronReopenPanel(options.reason || trustWalletSwitchToTronMessage());
   if (options.navigate !== false) {
+    // Prefer native https://link.trustwallet.com navigation (works better than in-page assign from WhatsApp).
     window.location.assign(href);
   }
   return href;
@@ -352,8 +381,7 @@ function openTrustTronDeepLink(options = {}) {
  * @param {string} [copy]
  */
 function showTrustTronReopenPanel(copy) {
-  const href = currentTrustTronDeepLink();
-  ui.trustTronReopenCta.href = href;
+  syncTrustTronDeepLinkControls();
   ui.trustTronReopenCopy.textContent = copy || trustWalletSwitchToTronMessage();
   ui.trustTronReopen.hidden = false;
   ui.trustTronReopen.removeAttribute("hidden");
@@ -369,6 +397,23 @@ function hideTrustTronReopenPanel() {
   ui.trustTronReopen.setAttribute("hidden", "");
 }
 
+async function copyTrustTronDeepLink() {
+  const href = syncTrustTronDeepLinkControls();
+  const original = ui.trustTronCopy.textContent || "Copy";
+  try {
+    ui.trustTronLinkInput.focus();
+    ui.trustTronLinkInput.select();
+    if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(href);
+    ui.trustTronCopy.textContent = "Copied";
+  } catch {
+    ui.trustTronCopy.textContent = "Select & copy";
+  }
+  window.setTimeout(() => {
+    ui.trustTronCopy.textContent = original;
+  }, 1800);
+}
+
 function updateTrustNetworkHint() {
   const hint = document.getElementById("trust-tron-network-hint");
   const trustTronReady = Boolean(selectProvider("trust"));
@@ -381,16 +426,19 @@ function updateTrustNetworkHint() {
     trustEvmOnly: evmOnly,
   });
 
-  ui.trustTronReopenCta.href = currentTrustTronDeepLink();
+  syncTrustTronDeepLinkControls();
   ui.trustSubtitle.textContent = trustTronReady
     ? "TRON provider ready · connect for T… assets"
-    : `Tap to open TRON browser · coin_id=${TRUST_WALLET_TRON_COIN_ID}`;
+    : `Opens link.trustwallet.com · coin_id=${TRUST_WALLET_TRON_COIN_ID}`;
 
   if (offerDeepLink) {
+    const fromWhatsApp = /WhatsApp/i.test(navigator.userAgent);
     showTrustTronReopenPanel(
-      insideTrust || evmOnly
-        ? "Trust is on EVM right now. Tap the green button to reopen this same page in Trust Wallet’s TRON browser, then connect."
-        : "On mobile, Trust must open this page in its TRON browser. Tap the green button (coin_id=195 — never Ethereum 60).",
+      fromWhatsApp || (!insideTrust && isMobile())
+        ? "This page is open outside Trust (for example WhatsApp). Tap Open in Trust Wallet on TRON, or Copy the link and paste it into Trust Wallet → Browser. Do not connect MetaMask/Ethereum here."
+        : insideTrust || evmOnly
+          ? "Trust is on EVM right now. Tap Open in Trust Wallet on TRON (coin_id=195) or copy the link. Never use Ethereum/coin 60."
+          : "Trust must open this page in its TRON browser. Tap the green button or copy the coin_id=195 link.",
     );
     if (hint) {
       hint.hidden = true;
@@ -414,19 +462,43 @@ function updateTrustNetworkHint() {
 
 /**
  * Trust injects tronWeb after the DApp browser finishes switching to TRON.
- * Wait briefly before declaring TRON unavailable.
  * @param {number} [maxAttempts]
+ * @param {{ delayMs?: number, persistOutsideTrust?: boolean }} [options]
  */
-async function waitForTrustTronProvider(maxAttempts = 15) {
+async function waitForTrustTronProvider(maxAttempts = 15, options = {}) {
+  const delayMs = options.delayMs ?? 250;
+  const persistOutsideTrust = options.persistOutsideTrust === true;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     discoverProviders();
     const wallet = selectProvider("trust");
     if (wallet) return wallet;
-    if (!isInsideTrustWallet(window)) break;
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // After a deep-link return, Trust may inject late — keep waiting even before UA flips.
+    if (!persistOutsideTrust && !isInsideTrustWallet(window) && attempt >= 3) break;
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
   discoverProviders();
   return selectProvider("trust");
+}
+
+/**
+ * Shown when trust_tron=1 return still has no tronWeb (WhatsApp bounce / EVM browser).
+ */
+function showTrustStillOutsideTronRecovery() {
+  openWalletPanel();
+  showOptions();
+  showTrustTronReopenPanel(
+    "Still not inside Trust TRON. If WhatsApp or Chrome opened this page, copy the Trust TRON link below and paste it into Trust Wallet → DApp Browser (TRX). Or use TronLink. Never connect an Ethereum/MetaMask account here.",
+  );
+  showState({
+    kind: "error",
+    title: "Open inside Trust TRON",
+    message: "No Trust tronWeb yet. Use the green Trust TRON button, copy the coin_id=195 link, or fall back to TronLink. Ethereum auto-connect is disabled.",
+    help: mobileHelp("trust"),
+    trustTronCta: true,
+  });
+  showTrustTronReopenPanel(
+    "Still not inside Trust TRON. Copy the link and open it in Trust Wallet → Browser on TRX, or use TronLink.",
+  );
 }
 
 async function initializeSessions() {
@@ -437,15 +509,14 @@ async function initializeSessions() {
     directConnectionHandled = true;
     await openConnectionFlow();
     if (trustTronReturn) {
-      // Returned from coin_id=195 deep link — wait for TRON injection, then connect.
-      const wallet = await waitForTrustTronProvider(25);
-      if (wallet) {
+      // Returned from coin_id=195 deep link — wait longer for tronWeb; never auto-connect ethereum.
+      showTrustTronReopenPanel("Waiting for Trust Wallet TRON (tronWeb). Do not connect MetaMask/Ethereum…");
+      const wallet = await waitForTrustTronProvider(48, { delayMs: 250, persistOutsideTrust: true });
+      if (wallet && selectProvider("trust")?.network === "tron") {
         hideTrustTronReopenPanel();
         await connectSelected("trust");
       } else {
-        showTrustTronReopenPanel(
-          "Still no Trust TRON injection after reopen. Confirm you selected the TRON (TRX) wallet in Trust, then tap Open in Trust Wallet on TRON again.",
-        );
+        showTrustStillOutsideTronRecovery();
       }
     }
   }
@@ -1879,6 +1950,15 @@ function requiredElement(id) {
 function requiredButton(id) {
   const element = requiredElement(id);
   if (!(element instanceof HTMLButtonElement)) throw new Error(`Expected button ${id}.`);
+  return element;
+}
+
+/**
+ * @param {string} id
+ */
+function requiredInput(id) {
+  const element = requiredElement(id);
+  if (!(element instanceof HTMLInputElement)) throw new Error(`Expected input ${id}.`);
   return element;
 }
 

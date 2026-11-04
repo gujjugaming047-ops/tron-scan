@@ -94,20 +94,72 @@ export function trustWalletSwitchToTronMessage() {
 }
 
 /**
- * Build a Trust Wallet deep link that reopens this page in the TRON DApp browser.
- * Always uses Trust TRON coin id 195. Never the Ethereum coin id.
- * @param {string} pageHref absolute page URL
+ * Canonical page URL embedded inside the Trust TRON deep link.
+ * Strips hash and unrelated query noise so WhatsApp/share wrappers cannot change coin/network.
+ * @param {string} pageHref
  */
-export function trustWalletTronDeepLink(pageHref) {
+export function trustWalletTronReturnPageUrl(pageHref) {
   let target;
   try {
     target = new URL(pageHref);
   } catch {
     throw new Error("A valid page URL is required for the Trust TRON deep link.");
   }
-  target.searchParams.set("connect", "1");
-  target.searchParams.set("trust_tron", "1");
-  return `https://link.trustwallet.com/open_url?coin_id=${TRUST_WALLET_TRON_COIN_ID}&url=${encodeURIComponent(target.toString())}`;
+  const clean = new URL(target.pathname || "/", target.origin);
+  clean.search = "";
+  clean.hash = "";
+  clean.searchParams.set("connect", "1");
+  clean.searchParams.set("trust_tron", "1");
+  return clean.toString();
+}
+
+/**
+ * Build a Trust Wallet deep link that reopens this page in the TRON DApp browser.
+ * Always uses https://link.trustwallet.com/open_url with coin_id=195. Never coin 60.
+ * @param {string} pageHref absolute page URL
+ */
+export function trustWalletTronDeepLink(pageHref) {
+  const pageUrl = trustWalletTronReturnPageUrl(pageHref);
+  return `https://link.trustwallet.com/open_url?coin_id=${TRUST_WALLET_TRON_COIN_ID}&url=${encodeURIComponent(pageUrl)}`;
+}
+
+/**
+ * Verify a Trust TRON deep link is correctly hosted, coin-scoped, and encoded.
+ * @param {string} link
+ * @returns {{ ok: true, coinId: string, pageUrl: string } | { ok: false, error: string }}
+ */
+export function verifyTrustTronDeepLink(link) {
+  let parsed;
+  try {
+    parsed = new URL(link);
+  } catch {
+    return { ok: false, error: "The Trust deep link is not a valid URL." };
+  }
+  if (parsed.protocol !== "https:" || parsed.hostname !== "link.trustwallet.com") {
+    return { ok: false, error: "The Trust deep link must use https://link.trustwallet.com." };
+  }
+  if (parsed.pathname !== "/open_url") {
+    return { ok: false, error: "The Trust deep link path must be /open_url." };
+  }
+  const coinId = parsed.searchParams.get("coin_id");
+  if (coinId !== String(TRUST_WALLET_TRON_COIN_ID)) {
+    return { ok: false, error: `The Trust deep link must use coin_id=${TRUST_WALLET_TRON_COIN_ID}.` };
+  }
+  if (parsed.searchParams.get("coin_id") === "60") {
+    return { ok: false, error: "Ethereum coin_id=60 is not allowed." };
+  }
+  const embedded = parsed.searchParams.get("url");
+  if (!embedded) return { ok: false, error: "The Trust deep link is missing the encoded page url." };
+  let page;
+  try {
+    page = new URL(embedded);
+  } catch {
+    return { ok: false, error: "The embedded page URL is not correctly encoded." };
+  }
+  if (page.searchParams.get("trust_tron") !== "1" || page.searchParams.get("connect") !== "1") {
+    return { ok: false, error: "The embedded page must include connect=1 and trust_tron=1." };
+  }
+  return { ok: true, coinId, pageUrl: page.toString() };
 }
 
 /**

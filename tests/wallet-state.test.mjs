@@ -19,6 +19,8 @@ import {
   trustWalletOpenOnEvmOnly,
   trustWalletSwitchToTronMessage,
   trustWalletTronDeepLink,
+  trustWalletTronReturnPageUrl,
+  verifyTrustTronDeepLink,
   walletConnectSessionIsEvmOnly,
   walletHelpLink,
   wrapTronWebAsProvider,
@@ -132,11 +134,22 @@ describe("wallet session state", () => {
     assert.match(trustMobile, /trust_tron%3D1|trust_tron=1/);
     assert.equal(walletHelpLink("tronlink", { ...page, mobile: true })?.href, "https://www.tronlink.org/");
 
-    const deep = trustWalletTronDeepLink("https://check.example/path?x=1");
+    const deep = trustWalletTronDeepLink("https://check.example/path?x=1#frag");
+    assert.match(deep, /^https:\/\/link\.trustwallet\.com\/open_url\?/);
     assert.match(deep, new RegExp(`coin_id=${TRUST_WALLET_TRON_COIN_ID}`));
     assert.equal(/coin_id=60/.test(deep), false);
     assert.match(deep, /connect%3D1/);
     assert.match(deep, /trust_tron%3D1/);
+    assert.equal(deep.includes("x=1"), false);
+    assert.equal(deep.includes("frag"), false);
+    const verified = verifyTrustTronDeepLink(deep);
+    assert.equal(verified.ok, true);
+    if (verified.ok) {
+      assert.equal(verified.coinId, "195");
+      assert.equal(verified.pageUrl, "https://check.example/path?connect=1&trust_tron=1");
+    }
+    assert.equal(trustWalletTronReturnPageUrl("https://check.example/path?utm=wa"), "https://check.example/path?connect=1&trust_tron=1");
+    assert.equal(verifyTrustTronDeepLink("https://link.trustwallet.com/open_url?coin_id=60&url=https%3A%2F%2Fx.test").ok, false);
     assert.equal(shouldOfferTrustTronDeepLink({
       mobile: true, trustTronReady: false, insideTrust: false, trustEvmOnly: false,
     }), true);
