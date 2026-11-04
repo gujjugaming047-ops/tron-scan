@@ -1,6 +1,5 @@
 import {
   TRON_IN_APP_BROWSER_HINT,
-  TRUST_WALLET_TRON_COIN_ID,
   detectMobileWalletHostContext,
   discoverTrustTronProvider,
   evaluateSessionRestore,
@@ -220,22 +219,12 @@ ui.trustTronReopenCta.addEventListener("click", (event) => {
     void connectSelected("tronlink");
     return;
   }
-  if (action === "connect-trust") {
-    event.preventDefault();
-    void connectSelected("trust");
-    return;
-  }
   if (action === "walletconnect") {
     event.preventDefault();
     void connectWalletConnect();
     return;
   }
-  if (action === "trust-deeplink") {
-    markTrustDeepLinkAttempt();
-    syncTrustTronDeepLinkControls();
-    return;
-  }
-  // open-tronlink (default): prefer native tronlinkoutside://, else follow href.
+  // open-tronlink only — never Trust deep-link as default.
   const deep = tronLinkOpenDappUrl(window.location.href);
   if (deep) {
     event.preventDefault();
@@ -243,9 +232,11 @@ ui.trustTronReopenCta.addEventListener("click", (event) => {
   }
 });
 ui.trustTronWcCta.addEventListener("click", () => void connectWalletConnect());
-ui.trustTronSecondaryCta.addEventListener("click", () => {
-  markTrustDeepLinkAttempt();
-  syncTrustTronDeepLinkControls();
+ui.trustTronSecondaryCta.addEventListener("click", (event) => {
+  // Demoted control — keep users on TronLink, do not open Trust.
+  event.preventDefault();
+  const deep = tronLinkOpenDappUrl(window.location.href);
+  window.location.assign(deep || "https://www.tronlink.org/");
 });
 ui.trustTronCopy.addEventListener("click", () => void copyTrustTronDeepLink());
 ui.trustTronTronlinkFallback.addEventListener("click", (event) => {
@@ -363,7 +354,17 @@ function addProvider(descriptor) {
 function renderProviderOptions() {
   ui.metaMask.dataset.detected = String(Boolean(selectProvider("metamask")));
   ui.tronLink.dataset.detected = String(Boolean(selectProvider("tronlink")));
-  ui.trust.dataset.detected = String(Boolean(selectProvider("trust")));
+  const trustReady = Boolean(selectProvider("trust"));
+  ui.trust.dataset.detected = String(trustReady);
+  // Hide Trust on mobile (and whenever host is Trust EVM) — never the default path.
+  const context = detectMobileWalletHostContext(window);
+  const hideTrust = isMobile() || context === "trust-evm" || trustDeepLinkFailed() || !trustReady;
+  ui.trust.hidden = hideTrust;
+  if (hideTrust) ui.trust.setAttribute("hidden", "");
+  else ui.trust.removeAttribute("hidden");
+  ui.trustSubtitle.textContent = trustReady
+    ? "Advanced · TRON provider only · prefer TronLink"
+    : "Demoted · often opens EVM · use TronLink";
   const injected = selectProvider("injected");
   ui.injected.hidden = !injected;
   if (injected) ui.injectedName.textContent = injected.name;
@@ -392,14 +393,6 @@ function trustDeepLinkFailed() {
     return new URL(window.location.href).searchParams.get("trust_failed") === "1";
   } catch {
     return false;
-  }
-}
-
-function markTrustDeepLinkAttempt() {
-  try {
-    sessionStorage.setItem("flashcheck_trust_tron_attempted", "1");
-  } catch {
-    // ignore
   }
 }
 
@@ -474,15 +467,15 @@ async function ensureWalletConnectConfigured() {
 }
 
 /**
- * Context-aware one-tap TRON guide. TronLink is primary; after Trust EVM failure
- * stop ethereum retries and offer TronLink + WalletConnect TRON.
+ * Mobile guide: TronLink primary only; WalletConnect TRON secondary.
+ * Trust is never the default open path and never auto-navigated.
  */
 async function updateMobileTronGuide() {
   const hint = document.getElementById("trust-tron-network-hint");
   discoverProviders();
   const context = detectMobileWalletHostContext(window);
   const wcReady = await ensureWalletConnectConfigured();
-  const failed = trustDeepLinkFailed();
+  const failed = trustDeepLinkFailed() || context === "trust-evm";
 
   const plan = recommendedMobileTronAction(context, {
     trustDeepLinkFailed: failed,
@@ -490,11 +483,14 @@ async function updateMobileTronGuide() {
   });
 
   syncTrustTronDeepLinkControls();
-  ui.trustSubtitle.textContent = context === "trust-tron"
-    ? "TRON provider ready · connect for T… assets"
-    : failed
-      ? "TRON-only · use TronLink or WalletConnect"
-      : `TRON only · coin_id=${TRUST_WALLET_TRON_COIN_ID}`;
+
+  // Never surface Trust deep-link controls as a CTA.
+  ui.trustTronSecondaryCta.hidden = true;
+  ui.trustTronSecondaryCta.setAttribute("hidden", "");
+  ui.trustTronLinkLabel.hidden = true;
+  ui.trustTronLinkLabel.setAttribute("hidden", "");
+  ui.trustTronLinkRow.hidden = true;
+  ui.trustTronLinkRow.setAttribute("hidden", "");
 
   if (plan.primary === "none" && !isMobile() && context === "desktop") {
     hideTrustTronReopenPanel();
@@ -505,50 +501,25 @@ async function updateMobileTronGuide() {
     return;
   }
 
-  ui.mobileTronGuideKicker.textContent = failed
-    ? "Trust EVM blocked · use a TRON wallet"
-    : "TRON connect · recommended path";
+  ui.mobileTronGuideKicker.textContent = plan.blockTrust || failed
+    ? "Trust EVM blocked · TronLink / WC only"
+    : "Mobile · TronLink only";
   ui.trustTronReopenCopy.textContent = plan.message;
-  // Show WC as a secondary one-tap when recommended; primary already covers WC when selected.
-  ui.trustTronWcCta.hidden = !plan.secondary.includes("walletconnect");
-  if (!ui.trustTronWcCta.hidden) ui.trustTronWcCta.removeAttribute("hidden");
 
-  const showTrustLink = plan.primary === "trust-deeplink" || plan.secondary.includes("trust-deeplink");
-  ui.trustTronSecondaryCta.hidden = !showTrustLink || plan.primary === "trust-deeplink";
-  ui.trustTronLinkLabel.hidden = !showTrustLink;
-  ui.trustTronLinkRow.hidden = !showTrustLink;
-  if (showTrustLink) {
-    ui.trustTronLinkLabel.removeAttribute("hidden");
-    ui.trustTronLinkRow.removeAttribute("hidden");
-    if (!ui.trustTronSecondaryCta.hidden) ui.trustTronSecondaryCta.removeAttribute("hidden");
-  }
+  // Secondary CTA is always WalletConnect TRON when configured.
+  ui.trustTronWcCta.hidden = !wcReady;
+  if (!ui.trustTronWcCta.hidden) ui.trustTronWcCta.removeAttribute("hidden");
+  else ui.trustTronWcCta.setAttribute("hidden", "");
 
   /** @type {HTMLAnchorElement} */
   const primary = ui.trustTronReopenCta;
-  if (plan.primary === "connect-trust") {
-    ui.trustTronReopenTitle.textContent = "Connect Trust TRON";
-    primary.textContent = "Connect Trust Wallet (TRON)";
-    primary.dataset.action = "connect-trust";
-    primary.href = "#";
-  } else if (plan.primary === "connect-tronlink") {
+  if (plan.primary === "connect-tronlink") {
     ui.trustTronReopenTitle.textContent = "Connect TronLink";
     primary.textContent = "Connect TronLink";
     primary.dataset.action = "connect-tronlink";
     primary.href = "#";
-  } else if (plan.primary === "walletconnect") {
-    ui.trustTronReopenTitle.textContent = "WalletConnect TRON";
-    primary.textContent = "Pair WalletConnect (TRON)";
-    primary.dataset.action = "walletconnect";
-    primary.href = "#";
-  } else if (plan.primary === "trust-deeplink") {
-    ui.trustTronReopenTitle.textContent = "Open Trust on TRON once";
-    primary.textContent = "Open in Trust Wallet on TRON";
-    primary.dataset.action = "trust-deeplink";
-    primary.href = currentTrustTronDeepLink();
-    primary.target = "_blank";
-    primary.rel = "noopener noreferrer";
   } else {
-    // open-tronlink (recommended default)
+    // open-tronlink — the only default primary path
     ui.trustTronReopenTitle.textContent = "Open in TronLink";
     primary.textContent = "Open in TronLink";
     primary.dataset.action = "open-tronlink";
@@ -590,7 +561,7 @@ async function waitForTrustTronProvider(maxAttempts = 15, options = {}) {
 }
 
 /**
- * After Trust deep-link return still on EVM: stop ethereum retries; TronLink + WC.
+ * Trust EVM / failed Trust path: block Trust, show only TronLink + WC.
  */
 function showTrustStillOutsideTronRecovery() {
   markTrustDeepLinkFailed();
@@ -599,8 +570,8 @@ function showTrustStillOutsideTronRecovery() {
   void updateMobileTronGuide();
   showState({
     kind: "error",
-    title: "Trust stayed on EVM",
-    message: "Stop retrying Trust/ethereum. Open TronLink (recommended) or pair WalletConnect TRON. Ethereum auto-connect is disabled.",
+    title: "Trust EVM blocked",
+    message: "Trust connect is blocked because it opened on EVM. Use Open in TronLink (primary) or Pair WalletConnect (TRON). Ethereum auto-connect is disabled.",
     help: { href: "https://www.tronlink.org/", label: "Get TronLink" },
     trustTronCta: true,
   });
@@ -608,19 +579,13 @@ function showTrustStillOutsideTronRecovery() {
 }
 
 /**
- * Primary CTA helper used by Trust connect failures before the guide rewrite.
- * @param {{ navigate?: boolean, reason?: string }} [options]
+ * Trust deep links are no longer the default open path — always recover via TronLink/WC.
+ * Kept as a named guard so any leftover Trust-open call cannot navigate to EVM.
  */
-function openTrustTronDeepLink(options = {}) {
-  if (trustDeepLinkFailed()) {
-    showTrustStillOutsideTronRecovery();
-    return currentTrustTronDeepLink();
-  }
-  markTrustDeepLinkAttempt();
-  const href = syncTrustTronDeepLinkControls();
-  void updateMobileTronGuide();
-  if (options.navigate !== false) window.location.assign(href);
-  return href;
+function openTrustTronDeepLink() {
+  markTrustDeepLinkFailed();
+  showTrustStillOutsideTronRecovery();
+  return currentTrustTronDeepLink();
 }
 
 async function initializeSessions() {
@@ -632,14 +597,12 @@ async function initializeSessions() {
     directConnectionHandled = true;
     await openConnectionFlow();
     if (trustTronReturn) {
-      // Wait for Trust TRON once; never auto-connect ethereum; on failure switch to TronLink/WC.
-      showTrustTronReopenPanel("Waiting for Trust TRON (tronWeb). If this stays on EVM, we will switch you to TronLink / WalletConnect…");
-      const wallet = await waitForTrustTronProvider(40, { delayMs: 250, persistOutsideTrust: true });
-      if (wallet && selectProvider("trust")?.network === "tron") {
-        hideTrustTronReopenPanel();
-        await connectSelected("trust");
-      } else {
+      // Never auto-open/connect Trust. If TRON isn't ready, block Trust and show TronLink/WC.
+      const wallet = await waitForTrustTronProvider(8, { delayMs: 200, persistOutsideTrust: true });
+      if (!(wallet && selectProvider("trust")?.network === "tron")) {
         showTrustStillOutsideTronRecovery();
+      } else {
+        void updateMobileTronGuide();
       }
     }
   }
@@ -940,10 +903,11 @@ async function connectSelected(walletId) {
   discoverProviders();
 
   if (walletId === "trust") {
-    // After a failed Trust TRON deep-link return, stop ethereum/Trust retries.
-    if (trustDeepLinkFailed()) {
+    const context = detectMobileWalletHostContext(window);
+    // Trust EVM (or mobile default): never deep-link / never ethereum — TronLink + WC only.
+    if (context === "trust-evm" || trustDeepLinkFailed() || trustWalletOpenOnEvmOnly(window) || isMobile()) {
       openWalletPanel();
-      showTrustStillOutsideTronRecovery();
+      openTrustTronDeepLink();
       return;
     }
     let trustWallet = selectProvider("trust");
@@ -953,34 +917,11 @@ async function connectSelected(walletId) {
         title: "Looking for Trust TRON…",
         message: "Waiting for Trust Wallet to inject tronWeb (not ethereum).",
       });
-      trustWallet = await waitForTrustTronProvider(12);
+      trustWallet = await waitForTrustTronProvider(8);
     }
-    const context = detectMobileWalletHostContext(window);
-    if (!trustWallet && (context === "trust-evm" || isMobile())) {
-      // One TRON-only deep link attempt; TronLink remains the recommended alternative.
+    if (!trustWallet || context !== "trust-tron") {
       openWalletPanel();
-      showOptions();
-      void updateMobileTronGuide();
-      openTrustTronDeepLink({
-        navigate: true,
-        reason: context === "trust-evm"
-          ? "Trust is on EVM. Trying TRON deep link once (coin_id=195). Prefer TronLink if this fails."
-          : "Opening Trust Wallet TRON browser once (coin_id=195). Prefer TronLink on mobile.",
-      });
-      return;
-    }
-    if (!trustWallet) {
-      openWalletPanel();
-      showOptions();
-      markTrustDeepLinkFailed();
-      void updateMobileTronGuide();
-      showState({
-        kind: "error",
-        title: "Use TronLink or WalletConnect",
-        message: "Trust TRON is not available. Open TronLink (recommended) or pair WalletConnect TRON. Do not connect ethereum.",
-        help: { href: "https://www.tronlink.org/", label: "Get TronLink" },
-        trustTronCta: true,
-      });
+      openTrustTronDeepLink();
       return;
     }
   }

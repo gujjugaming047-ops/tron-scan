@@ -1075,6 +1075,11 @@ footer span { color: var(--accent); }
   color: #fff;
 }
 
+.wallet-option-demoted {
+  opacity: 0.55;
+  order: 9;
+}
+
 .trust-tron-link-label {
   display: block;
   margin: 0 0 6px;

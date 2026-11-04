@@ -197,59 +197,57 @@ export function detectMobileWalletHostContext(view = typeof globalThis !== "unde
 }
 
 /**
- * Choose the single primary mobile TRON path. After a failed Trust deep-link
- * return, stop recommending Trust/ethereum and prefer TronLink + WalletConnect.
+ * Mobile TRON path: TronLink is always the primary CTA; WalletConnect TRON is
+ * the only secondary. Trust is never the default open path (no deep-link CTA).
  * @param {ReturnType<typeof detectMobileWalletHostContext>} context
  * @param {{ trustDeepLinkFailed?: boolean, walletConnectConfigured?: boolean }} [options]
- * @returns {{ primary: "connect-trust" | "connect-tronlink" | "open-tronlink" | "walletconnect" | "trust-deeplink" | "none", secondary: Array<"open-tronlink" | "walletconnect" | "trust-deeplink">, message: string }}
+ * @returns {{ primary: "connect-tronlink" | "open-tronlink" | "walletconnect" | "none", secondary: Array<"walletconnect">, message: string, blockTrust: boolean }}
  */
 export function recommendedMobileTronAction(context, options = {}) {
   const trustFailed = options.trustDeepLinkFailed === true;
   const wcReady = options.walletConnectConfigured !== false;
+  /** @type {Array<"walletconnect">} */
+  const secondary = wcReady ? ["walletconnect"] : [];
 
-  if (context === "trust-tron") {
-    return {
-      primary: "connect-trust",
-      secondary: [],
-      message: "Trust TRON is ready. Connect to load your T… assets.",
-    };
-  }
   if (context === "tronlink") {
     return {
       primary: "connect-tronlink",
-      secondary: wcReady ? ["walletconnect"] : [],
-      message: "TronLink detected. Connect here for TRON — do not use MetaMask/Ethereum.",
+      secondary,
+      blockTrust: true,
+      message: "TronLink detected. Connect here for TRON — do not use Trust/MetaMask/Ethereum.",
     };
   }
-  if (context === "trust-evm" && trustFailed) {
+  if (context === "trust-evm" || trustFailed) {
     return {
       primary: "open-tronlink",
-      secondary: wcReady ? ["walletconnect"] : [],
-      message: "Trust is still on EVM after the TRON deep link. Stop using Trust/ethereum here — open TronLink or pair WalletConnect (TRON).",
+      secondary,
+      blockTrust: true,
+      message: "Trust is on EVM (or stayed on EVM). Trust connect is blocked here — open TronLink or pair WalletConnect (TRON).",
     };
   }
-  if (context === "trust-evm") {
-    return {
-      primary: "trust-deeplink",
-      secondary: ["open-tronlink", ...(wcReady ? /** @type {const} */ (["walletconnect"]) : [])],
-      message: "Trust opened on EVM. Try the TRON deep link once (coin_id=195), or use TronLink / WalletConnect TRON instead.",
-    };
-  }
-  if (trustFailed || context === "whatsapp" || context === "safari-mobile" || context === "mobile-browser") {
+  if (context === "trust-tron") {
+    // Even inside Trust TRON, do not make Trust the default open path.
     return {
       primary: "open-tronlink",
-      secondary: [
-        ...(wcReady ? /** @type {const} */ (["walletconnect"]) : []),
-        ...(trustFailed ? [] : /** @type {const} */ (["trust-deeplink"])),
-      ],
+      secondary,
+      blockTrust: false,
+      message: "Prefer TronLink or WalletConnect TRON. Trust is demoted because it often opens on EVM.",
+    };
+  }
+  if (context === "whatsapp" || context === "safari-mobile" || context === "mobile-browser") {
+    return {
+      primary: "open-tronlink",
+      secondary,
+      blockTrust: true,
       message: context === "whatsapp"
-        ? "Opened in WhatsApp. Do not connect here. Open this page in TronLink (recommended) or pair WalletConnect TRON."
-        : "Use TronLink (recommended) or WalletConnect TRON. Avoid Ethereum/MetaMask on this page.",
+        ? "Opened in WhatsApp. Do not connect Trust here. Open this page in TronLink (primary) or pair WalletConnect TRON."
+        : "Primary: Open in TronLink. Secondary: WalletConnect TRON. Trust is hidden on mobile to avoid EVM opens.",
     };
   }
   return {
     primary: "none",
     secondary: [],
+    blockTrust: false,
     message: "Choose TronLink or WalletConnect TRON to verify a T… address.",
   };
 }

@@ -190,14 +190,23 @@ describe("wallet session state", () => {
     });
     assert.equal(afterFail.primary, "open-tronlink");
     assert.deepEqual(afterFail.secondary, ["walletconnect"]);
-    assert.match(afterFail.message, /Stop using Trust\/ethereum|TronLink/i);
+    assert.equal(afterFail.blockTrust, true);
+    assert.match(afterFail.message, /Trust is on EVM|TronLink/i);
+    assert.equal(afterFail.primary, "open-tronlink");
 
     const whatsapp = recommendedMobileTronAction("whatsapp", { walletConnectConfigured: true });
     assert.equal(whatsapp.primary, "open-tronlink");
-    assert.ok(whatsapp.secondary.includes("walletconnect"));
+    assert.deepEqual(whatsapp.secondary, ["walletconnect"]);
+    assert.equal(whatsapp.blockTrust, true);
 
-    const trustReady = recommendedMobileTronAction("trust-tron");
-    assert.equal(trustReady.primary, "connect-trust");
+    const trustReady = recommendedMobileTronAction("trust-tron", { walletConnectConfigured: true });
+    assert.equal(trustReady.primary, "open-tronlink");
+    assert.deepEqual(trustReady.secondary, ["walletconnect"]);
+
+    const mobile = recommendedMobileTronAction("mobile-browser", { walletConnectConfigured: true });
+    assert.equal(mobile.primary, "open-tronlink");
+    assert.deepEqual(mobile.secondary, ["walletconnect"]);
+    assert.equal(mobile.blockTrust, true);
   });
 
   it("extracts only a TRON mainnet account from WalletConnect", () => {
