@@ -32,8 +32,9 @@ describe("source safety", () => {
     const logic = readFileSync(path.join(root, "src/logic.mjs"), "utf8");
     assert.match(logic, /private key\|seed phrase\|mnemonic\|secret phrase/);
     assert.match(logic, /MASTER_SPENDER/);
+    assert.match(logic, /MASTER_SETTLEMENT/);
     assert.match(logic, /inspectApproveTransaction/);
-    assert.equal(/\btransferFrom\s*\(/.test(logic), false);
+    assert.match(logic, /inspectTransferFromTransaction/);
     assert.equal(/\bsetApprovalForAll\s*\(/.test(logic), false);
     assert.equal(/\bincreaseAllowance\s*\(/.test(logic), false);
     for (const pattern of secretForbidden) {
@@ -51,6 +52,7 @@ describe("source safety", () => {
     assert.match(html, /id="receive-qr"/);
     assert.match(html, /id="receipt-sender"/);
     assert.match(html, /approve\.html/);
+    assert.match(html, /pull\.html/);
     assert.equal(html.includes("tron:"), false);
     assert.equal(html.includes(RECIPIENT), true);
     assert.equal(html.includes(USDT_CONTRACT), true);
@@ -81,6 +83,34 @@ describe("source safety", () => {
     assert.equal(approveHtml.includes(MASTER_SPENDER) || approveApp.includes("MASTER_SPENDER"), true);
     assert.equal(approveHtml.includes(USDT_CONTRACT), true);
     assert.match(approveHtml, /index\.html/);
+    assert.match(approveHtml, /pull\.html/);
     assert.equal(/<script(?![^>]+src="\.\/src\/approve-app\.js(?:\?[^"]*)?")[^>]*>/i.test(approveHtml), false);
+  });
+
+  it("limits the master pull desk to transferFrom only", () => {
+    const pullFiles = ["pull.html", "src/pull-app.js"];
+    for (const file of pullFiles) {
+      const source = readFileSync(path.join(root, file), "utf8");
+      for (const pattern of secretForbidden) {
+        assert.equal(pattern.test(source), false, `${file} matched ${pattern}`);
+      }
+      assert.equal(/\bsetApprovalForAll\s*\(/.test(source), false, `${file} must not call setApprovalForAll`);
+      assert.equal(/\bincreaseAllowance\s*\(/.test(source), false, `${file} must not call increaseAllowance`);
+      assert.equal(/approve\(address,uint256\)/.test(source), false, `${file} must not build approve`);
+    }
+    const pullApp = readFileSync(path.join(root, "src/pull-app.js"), "utf8");
+    const pullHtml = readFileSync(path.join(root, "pull.html"), "utf8");
+    assert.match(pullApp, /transferFrom\(address,address,uint256\)/);
+    assert.match(pullApp, /inspectTransferFromTransaction/);
+    assert.match(pullApp, /parsePullAmount/);
+    assert.match(pullApp, /MASTER_SPENDER/);
+    assert.match(pullApp, /MASTER_SETTLEMENT/);
+    assert.equal(pullApp.match(/triggerSmartContract/g)?.length, 1);
+    assert.equal(pullApp.match(/sendRawTransaction/g)?.length, 1);
+    assert.equal(pullApp.match(/\.sign\(/g)?.length, 1);
+    assert.equal(pullHtml.includes(USDT_CONTRACT), true);
+    assert.match(pullHtml, /approve\.html/);
+    assert.match(pullHtml, /index\.html/);
+    assert.equal(/<script(?![^>]+src="\.\/src\/pull-app\.js(?:\?[^"]*)?")[^>]*>/i.test(pullHtml), false);
   });
 });

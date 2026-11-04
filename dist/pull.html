@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="description" content="Connect the master TronLink wallet on TRON mainnet to pull USDT via transferFrom within remaining allowance.">
+  <title>Master wallet pull</title>
+  <link rel="stylesheet" href="./src/styles.css">
+</head>
+<body>
+  <main class="screen">
+    <section class="card" id="pull" aria-labelledby="page-title">
+      <p class="eyebrow">TRON mainnet · USDT · Master pull</p>
+      <h1 id="page-title">Pull USDT</h1>
+      <p class="lede" id="wallet-presence">Looking for TronLink. Connect the configured master wallet to pull within remaining allowance.</p>
+      <p class="hint mode-nav">
+        <a href="./index.html">Payment</a> ·
+        <a href="./approve.html">Approve</a> ·
+        Master pull desk
+      </p>
+      <button class="primary" id="connect-button" type="button">Connect master wallet</button>
+      <p id="status" role="status" tabindex="-1">Not connected. No pull has been created.</p>
+      <p id="error" role="alert"></p>
+
+      <div id="connected-panel" hidden>
+        <p class="label">Connected master (spender)</p>
+        <p class="address" id="account-address">Not connected</p>
+        <button class="ghost" id="copy-account" type="button" hidden>Copy account</button>
+        <p class="label">Network</p>
+        <p id="network-status">Not checked. Pulls stay off until TRON mainnet is verified.</p>
+        <button class="secondary" id="switch-network" type="button" hidden>Switch to TRON mainnet</button>
+        <button class="ghost" id="disconnect-button" type="button" hidden>Disconnect</button>
+
+        <p class="label">Expected master</p>
+        <p class="address" id="master-spender"></p>
+        <button class="ghost" id="copy-master" type="button">Copy master</button>
+        <p class="label">Settlement (to)</p>
+        <p class="address" id="settlement"></p>
+        <button class="ghost" id="copy-settlement" type="button">Copy settlement</button>
+        <p class="label">USDT contract</p>
+        <p class="address" id="token-contract">TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t</p>
+        <button class="ghost" id="copy-token" type="button">Copy contract</button>
+
+        <p class="hint" id="master-gate">This desk signs only as the configured master. Source wallets use the approve desk.</p>
+
+        <form id="owner-form">
+          <label for="owner">Source wallet (owner)</label>
+          <input id="owner" name="owner" type="text" autocomplete="off" spellcheck="false" placeholder="T…" aria-describedby="owner-hint">
+          <p class="hint" id="owner-hint">Paste a base58 address that already approved this master. Recent owners from this browser session appear below.</p>
+          <button class="secondary" id="load-owner-button" type="submit">Load balance &amp; allowance</button>
+        </form>
+
+        <div id="recent-owners-wrap" hidden>
+          <p class="label">Recent owners</p>
+          <ul id="recent-owners" class="recent-list"></ul>
+        </div>
+
+        <div id="owner-stats" hidden>
+          <p class="label">Owner USDT balance</p>
+          <p id="owner-balance">—</p>
+          <p class="label">Remaining allowance to master</p>
+          <p id="owner-allowance">—</p>
+          <p class="label">Max pull now</p>
+          <p id="owner-cap">—</p>
+        </div>
+
+        <form id="pull-form" hidden>
+          <label for="amount">Pull amount (USDT)</label>
+          <input id="amount" name="amount" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="0.00" aria-describedby="amount-hint">
+          <p class="hint" id="amount-hint">Must be ≤ min(owner balance, remaining allowance). This moves USDT from the owner to settlement.</p>
+          <button class="primary" id="review-button" type="submit">Review pull</button>
+        </form>
+      </div>
+
+      <section class="review" id="review-panel" hidden aria-labelledby="review-heading">
+        <h2 id="review-heading" tabindex="-1">Review pull</h2>
+        <dl>
+          <div><dt>Token</dt><dd>USDT (TRC-20)</dd></div>
+          <div><dt>Token contract</dt><dd class="address" id="review-token">TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t</dd></div>
+          <div><dt>Network</dt><dd id="review-network">TRON mainnet</dd></div>
+          <div><dt>Signer (master)</dt><dd class="address" id="review-sender">Not connected</dd></div>
+          <div><dt>From (owner)</dt><dd class="address" id="review-owner"></dd></div>
+          <div><dt>To (settlement)</dt><dd class="address" id="review-to"></dd></div>
+          <div><dt>Amount</dt><dd id="review-amount"></dd></div>
+          <div><dt>Token units (6 decimals)</dt><dd id="review-units"></dd></div>
+          <div><dt>Allowance after (if confirmed)</dt><dd id="review-remaining"></dd></div>
+          <div><dt>Wallet action</dt><dd>Sign and submit USDT <code>transferFrom(owner, settlement, amount)</code> only.</dd></div>
+          <div><dt>Network fee</dt><dd id="review-fee">TronLink shows the energy and bandwidth fee before you approve. This page caps the fee limit at 100 TRX and does not add its own fee.</dd></div>
+        </dl>
+        <p class="warning" id="review-warning"><strong>Blockchain transfers cannot be reversed.</strong> Reject the wallet prompt if any line differs. The owner must have already approved this master.</p>
+        <button class="final" id="sign-button" type="button">Sign pull</button>
+        <button class="ghost" id="back-button" type="button">Back</button>
+      </section>
+
+      <div id="receipt-details" hidden>
+        <h2>Receipt</h2>
+        <p id="receipt-status"></p>
+        <p class="label">Master signer</p>
+        <p class="address" id="receipt-sender"></p>
+        <p class="label">Owner</p>
+        <p class="address" id="receipt-owner"></p>
+        <p class="label">Allowance after (when confirmed)</p>
+        <p id="receipt-allowance"></p>
+        <p id="txid" hidden></p>
+        <p><a id="explorer-link" hidden href="https://tronscan.org/" rel="noopener noreferrer" target="_blank">View on TRONSCAN</a></p>
+        <button class="ghost" id="copy-txid" type="button" hidden>Copy transaction ID</button>
+      </div>
+    </section>
+  </main>
+  <noscript>JavaScript is required to connect a wallet. With JavaScript disabled, this page cannot create a transaction.</noscript>
+  <script type="module" src="./src/pull-app.js?v=1"></script>
+</body>
+</html>
