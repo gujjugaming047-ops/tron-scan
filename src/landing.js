@@ -170,6 +170,8 @@ const TRUST_TRON_FAILED_KEY = "flashcheck_trust_tron_failed";
 const SELECTED_CHAIN_KEY = "flashcheck_selected_chain";
 /** @type {import("./chain-catalog.mjs").ChainOption} */
 let selectedChain = getChainOption(DEFAULT_CHAIN_ID);
+/** Prevent re-entrant guide updates (discover ↔ guide caused stack overflows). */
+let mobileTronGuideBusy = false;
 
 /** @type {WalletDescriptor[]} */
 let providers = [];
@@ -592,9 +594,6 @@ async function ensureWalletConnectConfigured() {
   walletConnectConfigured = Boolean(config.ok && config.body?.walletConnectProjectId);
   return walletConnectConfigured;
 }
-
-/** Prevent re-entrant guide updates (discover ↔ guide caused stack overflows). */
-let mobileTronGuideBusy = false;
 
 /**
  * Mobile guide for TRON selection: TronLink primary; WalletConnect secondary.
